@@ -4,12 +4,17 @@ This folder contains SQL scripts to create and populate the BB Find a Friend dat
 
 ## Tables (ERD)
 
-- **users** – App users
-- **personality_results** – Personality test submissions (q1–q4 slider values)
-- **chat_groups** – Chat groups
-- **group_members** – Members of each group
-- **reviews** – User reviews on the home page
-- **messages** – Chat messages
+Schema matches the project ERD:
+
+- **user** – App users (username, password, city, active, in_next_cycle)
+- **reviews** – User reviews (user_id, rating, comment)
+- **message** – Chat messages (user_id, groupchat_id, message, sent_time, delivered)
+- **groupchat** – Chat groups (name, chat_photo, active)
+- **user_groupchat** – Junction table for user ↔ groupchat many-to-many
+- **personalitytest** – Personality test submissions (user_id, results JSON, template_id)
+- **personalityquestion** – Individual question answers per test
+- **templatePersonalityTest** – Test templates
+- **templatePersonalityQuestion** – Template question definitions
 
 ## Local setup (SQLite)
 

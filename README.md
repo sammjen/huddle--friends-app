@@ -44,15 +44,16 @@ BB Find a Friend helps people form lasting friendships by connecting them with c
 ┌─────────────────────────────────────────────────────────────┐
 │                   Database (SQLite)                          │
 │                      db/app.db                               │
-│  - personality_results, users, chat_groups,                  │
-│    group_members, reviews, messages                          │
+│  - user, reviews, message, groupchat,                        │
+│    user_groupchat, personalitytest, personalityquestion,     │
+│    templatePersonalityTest, templatePersonalityQuestion      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 **Flow for Personality Test submit:**
 1. User completes sliders and clicks **Next**
 2. Frontend sends `POST /api/personality-results` with `{ q1, q2, q3, q4 }`
-3. Backend inserts a row into `personality_results` table
+3. Backend inserts into `personalitytest` and `personalityquestion` tables
 4. Backend returns `{ id, totalSubmissions, ... }`
 5. Frontend displays the result (submission # and total count) and shows "Continue to Chats"
 
@@ -139,10 +140,10 @@ A success message should appear with:
 - "You are submission #X"
 - "Total submissions: Y"
 
-The backend inserted a new row into the `personality_results` table. To verify, use the SQLite CLI (if installed):
+The backend inserted into the `personalitytest` and `personalityquestion` tables. To verify, use the SQLite CLI (if installed):
 
 ```sh
-sqlite3 db/app.db "SELECT * FROM personality_results ORDER BY id DESC LIMIT 5;"
+sqlite3 db/app.db "SELECT * FROM personalitytest ORDER BY id DESC LIMIT 5;"
 ```
 
 Or query the API (use the port your server runs on):
