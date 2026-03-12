@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, Navigate } from "react-router-dom";
 import { ArrowLeft, Send } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/components/AuthProvider";
 
 const MOCK_MESSAGES = [
   { id: "1", sender: "Steve B.", text: "Hey everyone! Who's online?", isMe: false, time: "8:30 PM" },
@@ -24,11 +25,16 @@ const GROUP_INFO: Record<string, { name: string; members: number }> = {
 const ChatConversation = () => {
   const navigate = useNavigate();
   const { groupId } = useParams();
+  const { isAuthenticated } = useAuth();
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState(MOCK_MESSAGES);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const group = GROUP_INFO[groupId || "1"] || { name: "Chat", members: 0 };
+
+  if (!isAuthenticated) {
+    return <Navigate to="/chats" replace />;
+  }
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

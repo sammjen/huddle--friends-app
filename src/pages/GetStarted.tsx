@@ -7,9 +7,11 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import AppHeader from "@/components/AppHeader";
+import { useAuth } from "@/components/AuthProvider";
 
 const GetStarted = () => {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [city, setCity] = useState("");
@@ -92,7 +94,10 @@ const GetStarted = () => {
 
           <div className="space-y-3 pt-2">
             <Button
-              onClick={() => navigate("/personality-test")}
+              onClick={() => {
+                login({ firstName: firstName.trim(), lastName: lastName.trim() });
+                navigate("/personality-test");
+              }}
               disabled={!canProceed}
               className="w-full h-12 text-base font-semibold rounded-xl"
             >

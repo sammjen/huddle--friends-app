@@ -1,7 +1,8 @@
-import { Menu, Moon, Sun } from "lucide-react";
+import { Menu, Moon, Sun, LogOut, LogIn } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useTheme } from "@/components/ThemeProvider";
+import { useAuth } from "@/components/AuthProvider";
 
 const NAV_ITEMS = [
   { label: "Home", path: "/" },
@@ -14,6 +15,7 @@ const AppHeader = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
+  const { isAuthenticated, user, logout } = useAuth();
 
   return (
     <header className="sticky top-0 z-50 flex items-center justify-between px-4 md:px-8 py-3 bg-background/80 backdrop-blur-sm border-b border-border">
@@ -53,6 +55,25 @@ const AppHeader = () => {
           )}
         </button>
 
+        {/* Auth Controls (desktop) */}
+        {isAuthenticated ? (
+          <button
+            onClick={() => { logout(); navigate("/"); }}
+            className="hidden md:flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground rounded-lg hover:bg-secondary/50 transition-colors"
+          >
+            <LogOut className="h-4 w-4" />
+            Log out
+          </button>
+        ) : (
+          <button
+            onClick={() => navigate("/get-started")}
+            className="hidden md:flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary hover:text-primary/80 rounded-lg hover:bg-primary/10 transition-colors"
+          >
+            <LogIn className="h-4 w-4" />
+            Log in
+          </button>
+        )}
+
         {/* Mobile Hamburger */}
         <Sheet>
           <SheetTrigger asChild>
@@ -75,6 +96,25 @@ const AppHeader = () => {
                   {item.label}
                 </button>
               ))}
+              <div className="border-t border-border mt-4 pt-4">
+                {isAuthenticated ? (
+                  <button
+                    onClick={() => { logout(); navigate("/"); }}
+                    className="flex items-center gap-2 text-left text-lg py-3 px-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors w-full"
+                  >
+                    <LogOut className="h-5 w-5" />
+                    Log out
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => navigate("/get-started")}
+                    className="flex items-center gap-2 text-left text-lg py-3 px-2 rounded-lg text-primary hover:bg-primary/10 transition-colors w-full"
+                  >
+                    <LogIn className="h-5 w-5" />
+                    Log in
+                  </button>
+                )}
+              </div>
             </nav>
           </SheetContent>
         </Sheet>
