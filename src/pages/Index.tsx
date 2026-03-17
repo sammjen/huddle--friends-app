@@ -19,6 +19,7 @@ const REVIEWS = [
   { quote: "I feel like I finally have a real support group. Not just online friends — real ones.", name: "Alice", location: "Dallas", stars: 4 },
   { quote: "Found gym bros who actually show up. We've been consistent for 3 months now.", name: "Greg", location: "Provo", stars: 5 },
   { quote: "Reconnected with an old friend by total chance. This app is magic.", name: "Ryan", location: "Austin", stars: 5 },
+  { quote: "As someone naturally introverted, this app gave me the confidence to join groups without the awkwardness. Best decision ever.", name: "Michael", location: "Boston", stars: 5 },
 ];
 
 const STEPS = [
