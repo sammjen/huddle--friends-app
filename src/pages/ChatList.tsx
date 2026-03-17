@@ -50,19 +50,19 @@ const MOCK_GROUPS = [
   },
 ];
 
+const getTimeUntilMidnightUTC = () => {
+  const now = new Date();
+  const nextMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  const diff = Math.max(0, Math.floor((nextMidnight.getTime() - now.getTime()) / 1000));
+  return { h: Math.floor(diff / 3600), m: Math.floor((diff % 3600) / 60), s: diff % 60 };
+};
+
 const CountdownTimer = () => {
-  const [time, setTime] = useState({ h: 23, m: 20, s: 19 });
+  const [time, setTime] = useState(getTimeUntilMidnightUTC);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setTime((prev) => {
-        let { h, m, s } = prev;
-        s -= 1;
-        if (s < 0) { s = 59; m -= 1; }
-        if (m < 0) { m = 59; h -= 1; }
-        if (h < 0) { h = 23; m = 59; s = 59; }
-        return { h, m, s };
-      });
+      setTime(getTimeUntilMidnightUTC());
     }, 1000);
     return () => clearInterval(interval);
   }, []);
