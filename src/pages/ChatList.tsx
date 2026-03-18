@@ -7,48 +7,13 @@ import { Button } from "@/components/ui/button";
 import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/components/AuthProvider";
 
-const MOCK_GROUPS = [
-  {
-    id: "1",
-    name: "The Boys",
-    members: ["Steve B.", "John C.", "Karl G.", "Josh D.", "Phil F."],
-    emoji: "🏀",
-    lastMessage: "Who's free tonight?",
-    unread: 3,
-  },
-  {
-    id: "2",
-    name: "Fortnite Quads",
-    members: ["Steve B.", "John C.", "Karl G.", "Josh D.", "Phil F."],
-    emoji: "🎮",
-    lastMessage: "GG's that was insane",
-    unread: 0,
-  },
-  {
-    id: "3",
-    name: "Marketplace Crew",
-    members: ["Steve B.", "John C.", "Karl G.", "Josh D.", "Phil F."],
-    emoji: "🏪",
-    lastMessage: "Found a great deal on...",
-    unread: 1,
-  },
-  {
-    id: "4",
-    name: "Study Squad",
-    members: ["Kayla G.", "Becca M.", "Karl G.", "Emma P."],
-    emoji: "📚",
-    lastMessage: "Library at 6?",
-    unread: 0,
-  },
-  {
-    id: "5",
-    name: "Weekend Warriors",
-    members: ["Steve B.", "John C.", "Karl G.", "Josh D.", "Phil F."],
-    emoji: "🎉",
-    lastMessage: "Saturday plans??",
-    unread: 5,
-  },
-];
+interface Group {
+  id: number;
+  name: string;
+  chat_photo: string | null;
+  member_count: number;
+  last_message: string | null;
+}
 
 const getTimeUntilMidnightUTC = () => {
   const now = new Date();
@@ -90,7 +55,19 @@ const CountdownTimer = () => {
 
 const ChatList = () => {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    setLoading(true);
+    fetch(`/api/groups/${user.id}`)
+      .then((res) => res.json())
+      .then((data) => setGroups(Array.isArray(data) ? data : []))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [isAuthenticated, user]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -110,7 +87,7 @@ const ChatList = () => {
             </div>
             <div className="space-y-2 sm:space-y-3">
               <Button
-                onClick={() => navigate("/get-started")}
+                onClick={() => navigate("/get-started?mode=signup")}
                 className="w-full h-12 text-base font-semibold rounded-xl gap-2 touch-manipulation"
               >
                 <UserPlus className="w-5 h-5" />
@@ -147,37 +124,41 @@ const ChatList = () => {
               <Users className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
               Your Groups
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3">
-              {MOCK_GROUPS.map((group) => (
-                <button
-                  key={group.id}
-                  onClick={() => navigate(`/chat/${group.id}`)}
-                  className="w-full bg-card rounded-2xl p-3 sm:p-4 shadow-sm hover:bg-card/80 active:scale-[0.98] transition-all text-left touch-manipulation"
-                >
-                  <div className="flex items-center gap-3">
-                    <Avatar className="w-11 h-11 sm:w-12 sm:h-12 flex-shrink-0">
-                      <AvatarFallback className="bg-secondary text-lg sm:text-xl">
-                        {group.emoji}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-0.5">
-                        <h3 className="font-semibold text-sm text-foreground">{group.name}</h3>
-                        <Badge variant="secondary" className="text-[10px] bg-secondary border-0 px-2 py-0 text-muted-foreground flex-shrink-0 ml-1">
-                          {group.members.length} members
-                        </Badge>
+
+            {loading ? (
+              <p className="text-sm text-muted-foreground">Loading groups...</p>
+            ) : groups.length === 0 ? (
+              <p className="text-sm text-muted-foreground">You're not in any groups yet. Check back after the next introduction!</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3">
+                {groups.map((group) => (
+                  <button
+                    key={group.id}
+                    onClick={() => navigate(`/chat/${group.id}`)}
+                    className="w-full bg-card rounded-2xl p-3 sm:p-4 shadow-sm hover:bg-card/80 active:scale-[0.98] transition-all text-left touch-manipulation"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Avatar className="w-11 h-11 sm:w-12 sm:h-12 flex-shrink-0">
+                        <AvatarFallback className="bg-secondary text-lg sm:text-xl">
+                          {group.chat_photo || "💬"}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <h3 className="font-semibold text-sm text-foreground">{group.name}</h3>
+                          <Badge variant="secondary" className="text-[10px] bg-secondary border-0 px-2 py-0 text-muted-foreground flex-shrink-0 ml-1">
+                            {group.member_count} members
+                          </Badge>
+                        </div>
+                        <p className="text-xs sm:text-sm text-muted-foreground truncate">
+                          {group.last_message || "No messages yet"}
+                        </p>
                       </div>
-                      <p className="text-xs sm:text-sm text-muted-foreground truncate">{group.lastMessage}</p>
                     </div>
-                    {group.unread > 0 && (
-                      <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-                        <span className="text-[9px] sm:text-[10px] font-bold text-primary-foreground">{group.unread}</span>
-                      </div>
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </>
       )}

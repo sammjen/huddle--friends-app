@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import Database from "better-sqlite3";
+import bcrypt from "bcryptjs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
@@ -79,6 +80,107 @@ app.get("/api/personality-results/count", (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch count." });
+  }
+});
+
+// POST /api/register - Create a new user
+app.post("/api/register", async (req, res) => {
+  try {
+    const { username, password, city } = req.body;
+    if (!username || !password) return res.status(400).json({ error: "Username and password required." });
+    const existing = db.prepare("SELECT id FROM user WHERE username = ?").get(username);
+    if (existing) return res.status(409).json({ error: "Username already exists." });
+    const hashed = await bcrypt.hash(password, 10);
+    const result = db
+      .prepare("INSERT INTO user (username, password, city) VALUES (?, ?, ?)")
+      .run(username, hashed, city || null);
+    res.status(201).json({ id: result.lastInsertRowid, username, city: city || null });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to register user." });
+  }
+});
+
+// POST /api/login - Login with username and password
+app.post("/api/login", async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: "Username and password required." });
+    const user = db
+      .prepare("SELECT id, username, city, password FROM user WHERE username = ?")
+      .get(username);
+    if (!user) return res.status(404).json({ error: "User not found." });
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) return res.status(401).json({ error: "Incorrect password." });
+    res.json({ id: user.id, username: user.username, city: user.city });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to login." });
+  }
+});
+
+// GET /api/groups/:userId - Get all group chats for a user
+app.get("/api/groups/:userId", (req, res) => {
+  try {
+    const { userId } = req.params;
+    const groups = db
+      .prepare(
+        `SELECT g.id, g.name, g.chat_photo,
+          (SELECT COUNT(*) FROM user_groupchat WHERE groupchat_id = g.id) as member_count,
+          (SELECT message FROM message WHERE groupchat_id = g.id ORDER BY sent_time DESC LIMIT 1) as last_message
+        FROM groupchat g
+        JOIN user_groupchat ug ON g.id = ug.groupchat_id
+        WHERE ug.user_id = ? AND g.active = 1`
+      )
+      .all(userId);
+    res.json(groups);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch groups." });
+  }
+});
+
+// GET /api/messages/:groupId - Get all messages for a group
+app.get("/api/messages/:groupId", (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const messages = db
+      .prepare(
+        `SELECT m.id, m.message, m.sent_time, m.user_id, u.username
+        FROM message m
+        LEFT JOIN user u ON m.user_id = u.id
+        WHERE m.groupchat_id = ?
+        ORDER BY m.sent_time ASC`
+      )
+      .all(groupId);
+    res.json(messages);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch messages." });
+  }
+});
+
+// POST /api/messages - Send a message
+app.post("/api/messages", (req, res) => {
+  try {
+    const { userId, groupId, message } = req.body;
+    if (!groupId || !message) {
+      return res.status(400).json({ error: "groupId and message are required." });
+    }
+    const result = db
+      .prepare("INSERT INTO message (user_id, groupchat_id, message) VALUES (?, ?, ?)")
+      .run(userId || null, groupId, message);
+    const row = db
+      .prepare(
+        `SELECT m.id, m.message, m.sent_time, m.user_id, u.username
+        FROM message m LEFT JOIN user u ON m.user_id = u.id
+        WHERE m.id = ?`
+      )
+      .get(result.lastInsertRowid);
+    res.status(201).json(row);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to send message." });
   }
 });
 

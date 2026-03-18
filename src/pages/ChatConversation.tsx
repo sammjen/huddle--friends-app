@@ -4,57 +4,93 @@ import { ArrowLeft, Send } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/AuthProvider";
 
-const MOCK_MESSAGES = [
-  { id: "1", sender: "Steve B.", text: "Hey everyone! Who's online?", isMe: false, time: "8:30 PM" },
-  { id: "2", sender: "You", text: "I'm here! What's up?", isMe: true, time: "8:31 PM" },
-  { id: "3", sender: "John C.", text: "Same here. Anyone down to hang out tonight?", isMe: false, time: "8:32 PM" },
-  { id: "4", sender: "You", text: "I'm free after 9, let's do it!", isMe: true, time: "8:33 PM" },
-  { id: "5", sender: "Karl G.", text: "Count me in", isMe: false, time: "8:34 PM" },
-  { id: "6", sender: "Phil F.", text: "Same, where are we meeting?", isMe: false, time: "8:35 PM" },
-  { id: "7", sender: "You", text: "How about the usual spot?", isMe: true, time: "8:36 PM" },
-];
-
-const GROUP_INFO: Record<string, { name: string; members: number }> = {
-  "1": { name: "The Boys", members: 5 },
-  "2": { name: "Fortnite Quads", members: 5 },
-  "3": { name: "Marketplace Crew", members: 5 },
-  "4": { name: "Study Squad", members: 4 },
-  "5": { name: "Weekend Warriors", members: 5 },
-};
+interface Message {
+  id: string;
+  sender: string;
+  text: string;
+  isMe: boolean;
+  time: string;
+}
 
 const ChatConversation = () => {
   const navigate = useNavigate();
   const { groupId } = useParams();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState(MOCK_MESSAGES);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [groupName, setGroupName] = useState("Chat");
+  const [memberCount, setMemberCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  const group = GROUP_INFO[groupId || "1"] || { name: "Chat", members: 0 };
 
   if (!isAuthenticated) {
     return <Navigate to="/chats" replace />;
   }
 
   useEffect(() => {
+    if (!groupId) return;
+
+    // Fetch group info
+    fetch(`/api/groups/${user?.id}`)
+      .then((res) => res.json())
+      .then((data: { id: number; name: string; member_count: number }[]) => {
+        const group = data.find((g) => String(g.id) === groupId);
+        if (group) {
+          setGroupName(group.name);
+          setMemberCount(group.member_count);
+        }
+      })
+      .catch(console.error);
+
+    // Fetch messages
+    fetch(`/api/messages/${groupId}`)
+      .then((res) => res.json())
+      .then((data: { id: number; message: string; sent_time: string; user_id: number | null; username: string | null }[]) => {
+        setMessages(
+          data.map((m) => ({
+            id: String(m.id),
+            sender: m.username || "Unknown",
+            text: m.message,
+            isMe: m.user_id === user?.id,
+            time: new Date(m.sent_time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+          }))
+        );
+      })
+      .catch(console.error);
+  }, [groupId, user?.id]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSend = () => {
-    if (!message.trim()) return;
+  const handleSend = async () => {
+    if (!message.trim() || !groupId) return;
+    const text = message.trim();
+    setMessage("");
+
+    // Optimistically add message
+    const optimisticId = String(Date.now());
     setMessages((prev) => [
       ...prev,
       {
-        id: String(Date.now()),
-        sender: "You",
-        text: message,
+        id: optimisticId,
+        sender: user?.displayName || user?.username || "You",
+        text,
         isMe: true,
         time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
       },
     ]);
-    setMessage("");
-    // Keep focus on input after sending (especially important on mobile)
+
+    try {
+      await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user?.id, groupId: Number(groupId), message: text }),
+      });
+    } catch (err) {
+      console.error("Failed to send message:", err);
+    }
+
     setTimeout(() => inputRef.current?.focus(), 10);
   };
 
@@ -64,7 +100,6 @@ const ChatConversation = () => {
   };
 
   return (
-    // Use dvh (dynamic viewport height) for correct mobile behavior when keyboard is open
     <div className="h-[100dvh] bg-background flex flex-col max-w-4xl mx-auto w-full">
       {/* Header */}
       <header className="flex-shrink-0 flex items-center gap-3 px-3 sm:px-6 md:px-8 py-2.5 sm:py-3 bg-background/80 backdrop-blur-sm border-b border-border">
@@ -76,12 +111,12 @@ const ChatConversation = () => {
           <ArrowLeft className="h-4 w-4 text-foreground" />
         </button>
         <div className="min-w-0">
-          <h1 className="text-sm sm:text-base font-semibold text-foreground leading-tight truncate">{group.name}</h1>
-          <p className="text-[11px] sm:text-xs text-muted-foreground">{group.members} members</p>
+          <h1 className="text-sm sm:text-base font-semibold text-foreground leading-tight truncate">{groupName}</h1>
+          <p className="text-[11px] sm:text-xs text-muted-foreground">{memberCount} members</p>
         </div>
       </header>
 
-      {/* Messages — takes all remaining space and scrolls */}
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-3 sm:px-4 md:px-6 py-3 sm:py-4 space-y-1 overscroll-contain">
         {messages.map((msg, i) => {
           const showSender = shouldShowSender(i);
@@ -111,7 +146,7 @@ const ChatConversation = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input — pinned to bottom, respects safe area */}
+      {/* Input */}
       <div
         className="flex-shrink-0 px-3 sm:px-4 py-2.5 sm:py-3 bg-background border-t border-border"
         style={{ paddingBottom: "max(0.625rem, env(safe-area-inset-bottom))" }}
