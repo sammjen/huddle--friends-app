@@ -8,7 +8,12 @@ CREATE TABLE IF NOT EXISTS user (
   password TEXT NOT NULL,
   city TEXT,
   active INTEGER DEFAULT 1,
-  in_next_cycle INTEGER DEFAULT 1
+  in_next_cycle INTEGER DEFAULT 1,
+  display_name TEXT,
+  bio TEXT,
+  email TEXT,
+  profile_photo TEXT,
+  hobbies TEXT DEFAULT '[]'
 );
 
 -- Reviews (user_id references user)

@@ -10,6 +10,7 @@ import GetStarted from "./pages/GetStarted";
 import PersonalityTest from "./pages/PersonalityTest";
 import ChatList from "./pages/ChatList";
 import ChatConversation from "./pages/ChatConversation";
+import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/personality-test" element={<PersonalityTest />} />
             <Route path="/chats" element={<ChatList />} />
             <Route path="/chat/:groupId" element={<ChatConversation />} />
+            <Route path="/profile" element={<Profile />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

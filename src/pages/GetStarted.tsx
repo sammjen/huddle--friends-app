@@ -18,6 +18,7 @@ const GetStarted = () => {
   // Signup fields
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [username, setUsername] = useState("");
   const [city, setCity] = useState("");
   const [attendsUniversity, setAttendsUniversity] = useState(true);
   const [hobbies, setHobbies] = useState("");
@@ -32,7 +33,7 @@ const GetStarted = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const canProceedSignup = firstName.trim() && city.trim() && password.trim() && password === confirmPassword;
+  const canProceedSignup = firstName.trim() && username.trim() && city.trim() && password.trim() && password === confirmPassword;
   const canProceedLogin = loginUsername.trim() && password.trim();
 
   const handleLogin = async () => {
@@ -61,20 +62,20 @@ const GetStarted = () => {
   const handleSignup = async () => {
     setLoading(true);
     setError("");
-    const username = `${firstName.trim().toLowerCase()}${lastName.trim() ? "_" + lastName.trim().toLowerCase() : ""}`.replace(/\s+/g, "");
+    const displayName = `${firstName.trim()} ${lastName.trim()}`.trim();
 
     try {
       const res = await fetch("/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password: password.trim(), city: city.trim() }),
+        body: JSON.stringify({ username: username.trim(), password: password.trim(), city: city.trim(), display_name: displayName }),
       });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Something went wrong.");
         return;
       }
-      login({ id: data.id, username: data.username, displayName: `${firstName.trim()} ${lastName.trim()}`.trim() });
+      login({ id: data.id, username: data.username, displayName: data.display_name || displayName });
       navigate("/personality-test");
     } catch {
       setError("Could not connect to server. Make sure the backend is running.");
@@ -188,6 +189,17 @@ const GetStarted = () => {
                 autoComplete="family-name"
               />
             </div>
+          </div>
+
+          <div className="space-y-1.5 sm:space-y-2">
+            <Label className="font-semibold text-sm">Username</Label>
+            <Input
+              placeholder="choose_a_username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value.replace(/\s+/g, "_").toLowerCase())}
+              className="bg-secondary/50 border-border h-11 text-base"
+              autoComplete="username"
+            />
           </div>
 
           <div className="space-y-1.5 sm:space-y-2">
