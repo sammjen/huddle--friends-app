@@ -86,15 +86,15 @@ app.get("/api/personality-results/count", (req, res) => {
 // POST /api/register - Create a new user
 app.post("/api/register", async (req, res) => {
   try {
-    const { username, password, city } = req.body;
+    const { username, password, city, display_name } = req.body;
     if (!username || !password) return res.status(400).json({ error: "Username and password required." });
     const existing = db.prepare("SELECT id FROM user WHERE username = ?").get(username);
     if (existing) return res.status(409).json({ error: "Username already exists." });
     const hashed = await bcrypt.hash(password, 10);
     const result = db
-      .prepare("INSERT INTO user (username, password, city) VALUES (?, ?, ?)")
-      .run(username, hashed, city || null);
-    res.status(201).json({ id: result.lastInsertRowid, username, city: city || null });
+      .prepare("INSERT INTO user (username, password, city, display_name) VALUES (?, ?, ?, ?)")
+      .run(username, hashed, city || null, display_name || null);
+    res.status(201).json({ id: result.lastInsertRowid, username, city: city || null, display_name: display_name || null });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to register user." });
@@ -181,6 +181,67 @@ app.post("/api/messages", (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to send message." });
+  }
+});
+
+// GET /api/profile/:userId - Get full profile
+app.get("/api/profile/:userId", (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = db
+      .prepare("SELECT id, username, display_name, bio, city, email, profile_photo, hobbies FROM user WHERE id = ?")
+      .get(userId);
+    if (!user) return res.status(404).json({ error: "User not found." });
+    res.json({ ...user, hobbies: user.hobbies ? JSON.parse(user.hobbies) : [] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch profile." });
+  }
+});
+
+// PUT /api/profile/:userId - Update profile fields
+app.put("/api/profile/:userId", (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { display_name, bio, city, email, profile_photo, hobbies } = req.body;
+    db.prepare(
+      `UPDATE user SET display_name = ?, bio = ?, city = ?, email = ?, profile_photo = ?, hobbies = ? WHERE id = ?`
+    ).run(
+      display_name || null,
+      bio || null,
+      city || null,
+      email || null,
+      profile_photo || null,
+      hobbies ? JSON.stringify(hobbies) : "[]",
+      userId
+    );
+    const updated = db
+      .prepare("SELECT id, username, display_name, bio, city, email, profile_photo, hobbies FROM user WHERE id = ?")
+      .get(userId);
+    res.json({ ...updated, hobbies: updated.hobbies ? JSON.parse(updated.hobbies) : [] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update profile." });
+  }
+});
+
+// PUT /api/profile/:userId/password - Change password
+app.put("/api/profile/:userId/password", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword)
+      return res.status(400).json({ error: "Both fields are required." });
+    const user = db.prepare("SELECT password FROM user WHERE id = ?").get(userId);
+    if (!user) return res.status(404).json({ error: "User not found." });
+    const valid = await bcrypt.compare(currentPassword, user.password);
+    if (!valid) return res.status(401).json({ error: "Current password is incorrect." });
+    const hashed = await bcrypt.hash(newPassword, 10);
+    db.prepare("UPDATE user SET password = ? WHERE id = ?").run(hashed, userId);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update password." });
   }
 });
 
