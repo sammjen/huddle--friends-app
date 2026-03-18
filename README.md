@@ -1,173 +1,252 @@
-# BB Find a Friend
+# Huddle
 
-## App Summary
+Huddle is a social matching app prototype that helps users find new friends through a short onboarding flow, a personality quiz, and group chat spaces. The current build focuses on a working vertical slice: users can enter profile details, complete the quiz, save results to SQLite through an Express API, and continue into mock group chats.
 
-BB Find a Friend helps people form lasting friendships by connecting them with compatible groups based on their personality and social preferences. The primary users are individuals who struggle to meet new people or want to expand their social circle—whether they’re new to an area, have shifting schedules, or prefer structured ways to make friends. The app offers a personality test to understand how outgoing and social a user is, then matches them with groups for activities like sports, gaming, study, or casual hangouts. Users can browse groups, view member lists, and chat within groups. The product reduces the friction of finding like-minded friends and provides a single place to discover and join social groups.
+## Overview
+
+The app is designed for people who want a lower-friction way to meet others with similar personalities and interests. Instead of swiping through individuals, Huddle guides users through a lightweight setup process and then places them into group-based experiences.
+
+Current user flow:
+
+1. Land on the marketing homepage.
+2. Start onboarding and enter profile details.
+3. Complete a 4-question personality quiz.
+4. Submit quiz answers to the backend.
+5. View a success state and continue to the chat experience.
+
+## Current Features
+
+- Responsive landing page with product messaging and reviews
+- Profile onboarding form with lightweight client-side sign-in
+- Four-question personality quiz with slider-based answers
+- Express API endpoint that stores quiz submissions in SQLite
+- Mock chat list with countdown to the next group drop
+- Mock group conversation screen with send-message UI
+- Light and dark theme toggle
+- Mobile-friendly navigation and layouts
 
 ## Tech Stack
 
 | Layer | Technologies |
-|-------|--------------|
-| **Frontend** | React 18, TypeScript, Vite, React Router, TanStack Query |
-| **UI & Styling** | Tailwind CSS, shadcn/ui, Radix UI, Lucide icons |
-| **Backend** | Node.js, Express |
-| **Database** | SQLite (via better-sqlite3) |
-| **Authentication** | Not yet implemented |
-| **External Services** | None |
+| --- | --- |
+| Frontend | React 18, TypeScript, Vite, React Router |
+| UI and Styling | Tailwind CSS, shadcn/ui, Radix UI, Lucide React |
+| State and Utilities | React Context, TanStack Query |
+| Backend | Node.js, Express |
+| Database | SQLite with `better-sqlite3` |
+| Testing | Vitest, Testing Library |
 
-## Architecture Diagram
+## Architecture
 
-```
-┌─────────────┐
-│    User     │
-└──────┬──────┘
-       │ HTTP (browser)
-       ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     Frontend (Vite + React)                  │
-│                      http://localhost:8080                   │
-│  - Personality Test, Chats, Reviews                          │
-│  - Calls /api/* for backend operations                       │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ HTTP (fetch)
-                               │ /api/personality-results (POST)
-                               │ /api/personality-results/count (GET)
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     Backend (Express)                        │
-│                    http://localhost:3001                     │
-│  - REST API for personality results                          │
-│  - Validates input, persists to DB, returns JSON             │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ SQL
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   Database (SQLite)                          │
-│                      db/app.db                               │
-│  - user, reviews, message, groupchat,                        │
-│    user_groupchat, personalitytest, personalityquestion,     │
-│    templatePersonalityTest, templatePersonalityQuestion      │
-└─────────────────────────────────────────────────────────────┘
+```text
+Browser
+  |
+  v
+React + Vite frontend (`localhost:8080`)
+  - Landing page
+  - Onboarding flow
+  - Personality quiz
+  - Mock chat experience
+  |
+  v
+Express API (`localhost:3001`)
+  - POST /api/personality-results
+  - GET /api/personality-results/count
+  |
+  v
+SQLite database (`db/app.db`)
+  - Stores personality test submissions
+  - Includes schema and seed data for other planned entities
 ```
 
-**Flow for Personality Test submit:**
-1. User completes sliders and clicks **Next**
-2. Frontend sends `POST /api/personality-results` with `{ q1, q2, q3, q4 }`
-3. Backend inserts into `personalitytest` and `personalityquestion` tables
-4. Backend returns `{ id, totalSubmissions, ... }`
-5. Frontend displays the result (submission # and total count) and shows "Continue to Chats"
+## Project Structure
+
+```text
+src/
+  components/      Shared UI, header, auth, theme
+  pages/           Route-level screens
+  test/            Vitest setup and example test
+server/
+  server.js        Express API
+  init-db.js       Database initialization script
+db/
+  schema.sql       Database schema
+  seed.sql         Seed data
+  app.db           Generated local SQLite database
+```
+
+## Routes
+
+| Route | Purpose |
+| --- | --- |
+| `/` | Landing page |
+| `/get-started` | Profile onboarding |
+| `/personality-test` | Quiz flow |
+| `/chats` | Group chat list |
+| `/chat/:groupId` | Individual chat screen |
+
+## Data and Persistence
+
+Two parts of the app currently persist data:
+
+- Quiz submissions are saved to SQLite in `db/app.db`.
+- Basic auth state is stored in `localStorage` under `huddle-user`.
+
+The chat experience is currently mock data on the frontend. Users can type and send messages during a session, but those messages are not stored in the database.
 
 ## Prerequisites
 
-| Software | Purpose | Installation |
-|----------|---------|--------------|
-| **Node.js** (v18+) | Runtime for frontend and backend | [nodejs.org](https://nodejs.org/) or [nvm](https://github.com/nvm-sh/nvm#installing-and-updating) |
-| **npm** | Package manager (included with Node.js) | — |
+- Node.js 18 or newer
+- npm 9 or newer
 
-**Verify installation:**
+Check your versions:
 
 ```sh
-node --version   # Expect v18.x or higher
-npm --version    # Expect 9.x or higher
+node --version
+npm --version
 ```
 
-No separate database server is required; SQLite runs as a file-based database.
+## Installation
 
-## Installation and Setup
-
-### 1. Clone the repository
+Clone the repo and install frontend dependencies:
 
 ```sh
-git clone <YOUR_GIT_URL>
-cd kindred-connect-38
-```
-
-### 2. Install frontend dependencies
-
-```sh
+git clone <your-repository-url>
+cd huddle--friends-app-1
 npm install
 ```
 
-### 3. Create the database
-
-Initialize the database from `db/schema.sql` and `db/seed.sql`:
+Install backend dependencies and initialize the SQLite database:
 
 ```sh
 npm run server:setup
 ```
 
-This script installs server dependencies, creates `db/app.db`, runs the schema, and inserts sample data.
+That command:
 
-### 4. Environment variables
+- installs dependencies inside `server/`
+- creates or updates `db/app.db`
+- runs `db/schema.sql`
+- runs `db/seed.sql`
 
-None required. The backend uses `PORT=3001` by default. If port 3001 is in use, run `PORT=3002 npm run server` and ensure the Vite proxy in `vite.config.ts` targets `http://localhost:3002` (or whatever port you use).
+## Environment Variables
 
-## Running the Application
+For local development, no environment variables are required if you use the Vite dev server proxy.
 
-### Terminal 1 – Backend
+Optional frontend environment variable:
+
+```sh
+VITE_API_URL=http://localhost:3001
+```
+
+Notes:
+
+- In development, requests to `/api` are proxied by `vite.config.ts` to `http://localhost:3001`.
+- A production environment file currently exists with a deployed API URL, but local development works without it.
+- If you change the backend port, update either `VITE_API_URL` or the Vite proxy target.
+
+## Running the App
+
+Start the backend:
 
 ```sh
 npm run server
 ```
 
-Backend runs at **http://localhost:3001** (or the port in `PORT`). If you changed `PORT`, ensure `vite.config.ts` proxies `/api` to that port.
-
-### Terminal 2 – Frontend
+Start the frontend in a second terminal:
 
 ```sh
 npm run dev
 ```
 
-Frontend runs at **http://localhost:8080**.
+Local URLs:
 
-Open **http://localhost:8080** in your browser.
+- Frontend: `http://localhost:8080`
+- Backend: `http://localhost:3001`
 
-## Verifying the Vertical Slice
+## Available Scripts
 
-This section confirms the Personality Test "Next" button correctly updates the database and reflects the change in the UI.
+From the project root:
 
-### 1. Trigger the feature
+```sh
+npm run dev
+npm run build
+npm run preview
+npm run lint
+npm run test
+npm run test:watch
+npm run server
+npm run server:init
+npm run server:setup
+```
 
-1. Open http://localhost:8080
-2. Click **Get Started** (or **Log in**) and go through the flow
-3. Navigate to **Personality Test** (via the menu or Get Started → Next)
-4. Adjust the sliders for the four questions
-5. Click **Next**
+## API Endpoints
 
-### 2. Confirm the database was updated
+### `POST /api/personality-results`
 
-A success message should appear with:
-- "You are submission #X"
-- "Total submissions: Y"
+Saves a 4-question quiz submission.
 
-The backend inserted into the `personalitytest` and `personalityquestion` tables. To verify, use the SQLite CLI (if installed):
+Example request body:
+
+```json
+{
+  "q1": 50,
+  "q2": 3,
+  "q3": 50,
+  "q4": 50
+}
+```
+
+### `GET /api/personality-results/count`
+
+Returns the total number of saved quiz submissions.
+
+## Manual Verification
+
+To verify the main vertical slice locally:
+
+1. Open `http://localhost:8080`.
+2. Click `Get Started`.
+3. Fill in at least first name and city.
+4. Complete the personality quiz.
+5. Submit the final question.
+6. Confirm you reach the success screen and can continue to `Find My Group`.
+
+To verify the database was updated:
 
 ```sh
 sqlite3 db/app.db "SELECT * FROM personalitytest ORDER BY id DESC LIMIT 5;"
+sqlite3 db/app.db "SELECT * FROM personalityquestion ORDER BY id DESC LIMIT 8;"
 ```
 
-Or query the API (use the port your server runs on):
+Or check the API directly:
 
 ```sh
 curl http://localhost:3001/api/personality-results/count
-# or, if using PORT=3002: curl http://localhost:3002/api/personality-results/count
 ```
 
-The `total` value should match the count shown in the UI.
+## Testing
 
-The newest row in the table should match your last submission.
+Run the test suite with:
 
-### 3. Verify persistence after refresh
+```sh
+npm run test
+```
 
-1. On the Personality Test page, note the total count after submitting (e.g., "Total submissions: 11")
-2. Click **Continue to Chats** (or navigate away and back)
-3. Return to the Personality Test page and submit again
-4. The new submission should be #12 (or higher), and the total count should increase
+At the moment, the repository includes only a simple example test, so manual testing is still important.
 
-Because data is stored in `db/app.db`, it persists across restarts of the backend. Restarting the server and resubmitting will still show an incrementing submission ID and total count.
+## Known Limitations
 
----
+- Authentication is client-side only and not secure for production use.
+- Chat groups and messages are mock frontend data.
+- The quiz result is stored, but matching logic is not implemented yet.
+- There is no real user account creation or backend session handling.
+- Automated test coverage is minimal.
 
-## Project info
+## Future Improvements
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+- Add real authentication and user accounts
+- Persist groups and chat messages in the database
+- Implement friend/group matching based on quiz results
+- Expand automated testing for the onboarding and API flows
+- Add deployment documentation
