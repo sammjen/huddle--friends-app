@@ -94,7 +94,16 @@ app.post("/api/register", async (req, res) => {
     const result = db
       .prepare("INSERT INTO user (username, password, city) VALUES (?, ?, ?)")
       .run(username, hashed, city || null);
-    res.status(201).json({ id: result.lastInsertRowid, username, city: city || null });
+    const newUserId = result.lastInsertRowid;
+    // Add new user to all active groupchats
+    const groupchats = db.prepare("SELECT id FROM groupchat WHERE active = 1").all();
+    const insertMembership = db.prepare(
+      "INSERT OR IGNORE INTO user_groupchat (user_id, groupchat_id) VALUES (?, ?)"
+    );
+    for (const gc of groupchats) {
+      insertMembership.run(newUserId, gc.id);
+    }
+    res.status(201).json({ id: newUserId, username, city: city || null });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to register user." });
@@ -116,6 +125,23 @@ app.post("/api/login", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to login." });
+  }
+});
+
+// GET /api/groupchats/:id - Get a single groupchat with member count
+app.get("/api/groupchats/:id", (req, res) => {
+  try {
+    const { id } = req.params;
+    const group = db.prepare(`
+      SELECT g.id, g.name, g.chat_photo,
+        (SELECT COUNT(*) FROM user_groupchat WHERE groupchat_id = g.id) as member_count
+      FROM groupchat g WHERE g.id = ?
+    `).get(id);
+    if (!group) return res.status(404).json({ error: "Group not found." });
+    res.json(group);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch groupchat." });
   }
 });
 
