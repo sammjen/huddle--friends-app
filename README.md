@@ -243,6 +243,63 @@ At the moment, the repository includes only a simple example test, so manual tes
 - There is no real user account creation or backend session handling.
 - Automated test coverage is minimal.
 
+## EARS Requirements
+
+The following requirements are written using the Easy Approach to Requirements Syntax (EARS). Each requirement uses one of the standard EARS patterns: ubiquitous (unconditional), event-driven (WHEN), state-driven (WHILE), unwanted behavior (IF/WHEN), or optional feature (WHERE).
+
+### Landing Page
+
+- The system shall display a marketing landing page at the root route (`/`).
+- The system shall display user reviews on the landing page.
+- WHEN a user clicks the "Get Started" button, the system shall navigate the user to the `/get-started` onboarding route.
+
+### Onboarding and Profile
+
+- WHEN a user visits `/get-started`, the system shall present a profile onboarding form requesting at least a first name and city.
+- WHEN a user submits the onboarding form with a first name and city, the system shall store the profile data in `localStorage` under the key `huddle-user`.
+- IF a user submits the onboarding form without entering a first name or city, the system shall prevent navigation and indicate which required fields are missing.
+- WHEN a user completes the onboarding form, the system shall navigate the user to the personality test at `/personality-test`.
+
+### Personality Quiz
+
+- WHEN a user visits `/personality-test`, the system shall present a four-question personality quiz with slider-based inputs.
+- WHILE a user is progressing through the quiz, the system shall display only one question at a time and track the current step.
+- WHEN a user submits the final quiz question, the system shall POST the four slider values to `POST /api/personality-results`.
+- WHEN the API returns a success response, the system shall display a success state and offer a "Find My Group" action.
+- IF the API request fails, WHEN the user submits the quiz, the system shall display an error message and allow the user to retry.
+
+### Backend API
+
+- The system shall expose a `POST /api/personality-results` endpoint that accepts a JSON body containing values for `q1`, `q2`, `q3`, and `q4`.
+- WHEN a valid quiz submission is received, the system shall persist the record to the SQLite database and return a success response.
+- The system shall expose a `GET /api/personality-results/count` endpoint that returns the total number of stored quiz submissions.
+- IF a request to `POST /api/personality-results` is missing required fields, the system shall return an appropriate error response without writing to the database.
+
+### Chat Experience
+
+- WHEN a user navigates to `/chats`, the system shall display a list of available group chats and a countdown to the next group drop.
+- WHEN a user selects a group from the chat list, the system shall navigate the user to `/chat/:groupId` and display the group conversation.
+- WHILE a user is on a group conversation screen, the system shall display a message input field and a send button.
+- WHEN a user types a message and submits it, the system shall append the message to the conversation view within the current session.
+
+### Theme
+
+- The system shall support both a light theme and a dark theme.
+- WHEN a user toggles the theme control, the system shall switch the active theme between light and dark.
+- WHILE the dark theme is active, the system shall apply dark-mode styles across all pages and components.
+
+### Navigation and Routing
+
+- The system shall render a consistent application header with navigation links on all authenticated screens.
+- WHEN a user navigates to a route that does not exist, the system shall display a 404 not-found page.
+- WHILE a user is not signed in, the system shall restrict access to the chat routes and redirect the user to onboarding.
+
+### Performance and Compatibility
+
+- The system shall render all pages in a mobile-friendly layout without horizontal scrolling on viewports 320 px wide and above.
+- The system shall serve the frontend from `http://localhost:8080` and the API from `http://localhost:3001` during local development.
+- WHERE the Vite dev server proxy is active, the system shall forward all `/api` requests from the frontend to the backend without requiring a separate `VITE_API_URL` environment variable.
+
 ## Future Improvements
 
 - Add real authentication and user accounts
