@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -106,17 +106,17 @@ const PersonalityTest = () => {
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <AppHeader />
-        <div className="flex-1 flex flex-col items-center justify-center px-6 text-center animate-fade-in">
-          <div className="w-20 h-20 rounded-full bg-primary/15 flex items-center justify-center mb-6">
-            <CheckCircle2 className="w-10 h-10 text-primary" />
+        <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 text-center animate-fade-in">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-primary/15 flex items-center justify-center mb-5 sm:mb-6">
+            <CheckCircle2 className="w-8 h-8 sm:w-10 sm:h-10 text-primary" />
           </div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">You're all set!</h1>
-          <p className="text-muted-foreground mb-8 max-w-xs">
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">You're all set!</h1>
+          <p className="text-sm sm:text-base text-muted-foreground mb-6 sm:mb-8 max-w-xs">
             We're finding your people. Your first group drops in the next cycle.
           </p>
           <Button
             onClick={() => navigate("/chats")}
-            className="rounded-full px-8 h-12 text-base font-semibold"
+            className="rounded-full px-8 h-11 sm:h-12 text-sm sm:text-base font-semibold touch-manipulation"
           >
             Find My Group
           </Button>
@@ -130,7 +130,7 @@ const PersonalityTest = () => {
       <AppHeader />
 
       {/* Step Progress */}
-      <div className="px-6 pt-4">
+      <div className="px-4 sm:px-6 pt-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-muted-foreground">Step 2 of 2</span>
           <span className="text-xs text-primary font-medium">Personality Quiz</span>
@@ -139,7 +139,7 @@ const PersonalityTest = () => {
       </div>
 
       {/* Question Progress */}
-      <div className="px-6 pt-4">
+      <div className="px-4 sm:px-6 pt-3 sm:pt-4">
         <div className="flex items-center justify-between mb-2">
           <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-0 px-2 py-0.5">
             Question {currentQuestion + 1} of {QUESTIONS.length}
@@ -150,19 +150,27 @@ const PersonalityTest = () => {
       </div>
 
       {/* Question Card */}
-      <div className="flex-1 flex flex-col justify-center px-4 py-6">
-        <div key={currentQuestion} className="bg-card rounded-2xl p-6 shadow-lg max-w-sm md:max-w-lg mx-auto w-full animate-fade-in">
-          <p className="text-center font-semibold text-base mb-8 leading-relaxed">
+      <div className="flex-1 flex flex-col justify-center px-4 py-4 sm:py-6">
+        <div
+          key={currentQuestion}
+          className="bg-card rounded-2xl p-5 sm:p-6 shadow-lg max-w-sm sm:max-w-lg mx-auto w-full animate-fade-in"
+        >
+          <p className="text-center font-semibold text-sm sm:text-base mb-6 sm:mb-8 leading-relaxed">
             {q.question}
           </p>
-          <Slider
-            value={[answers[currentQuestion]]}
-            onValueChange={handleAnswerChange}
-            max={q.maxValue}
-            step={q.step}
-            className="my-4"
-          />
-          <div className="flex justify-between text-sm text-muted-foreground mt-2">
+
+          {/* Slider with larger touch target on mobile */}
+          <div className="py-2">
+            <Slider
+              value={[answers[currentQuestion]]}
+              onValueChange={handleAnswerChange}
+              max={q.maxValue}
+              step={q.step}
+              className="my-2 sm:my-4"
+            />
+          </div>
+
+          <div className="flex justify-between text-xs sm:text-sm text-muted-foreground mt-2">
             <span>{q.min}</span>
             <span className="text-primary font-semibold">{answers[currentQuestion]}</span>
             <span>{q.max}</span>
@@ -170,11 +178,11 @@ const PersonalityTest = () => {
         </div>
 
         {/* Navigation */}
-        <div className="max-w-sm md:max-w-lg mx-auto w-full mt-6 space-y-3">
+        <div className="max-w-sm sm:max-w-lg mx-auto w-full mt-4 sm:mt-6 space-y-2 sm:space-y-3 px-0">
           <Button
             onClick={handleNext}
             disabled={isSubmitting}
-            className="w-full h-12 text-base font-semibold rounded-xl"
+            className="w-full h-12 text-sm sm:text-base font-semibold rounded-xl touch-manipulation"
           >
             {isSubmitting ? "Saving..." : isLastQuestion ? "Submit" : "Next Question"}
           </Button>
@@ -182,7 +190,7 @@ const PersonalityTest = () => {
             <Button
               onClick={handleBack}
               variant="ghost"
-              className="w-full h-10 text-sm text-muted-foreground hover:text-foreground"
+              className="w-full h-10 text-sm text-muted-foreground hover:text-foreground touch-manipulation"
             >
               <ArrowLeft className="w-4 h-4 mr-1" />
               Previous

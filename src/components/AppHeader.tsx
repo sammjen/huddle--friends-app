@@ -20,7 +20,10 @@ const AppHeader = () => {
   return (
     <header className="sticky top-0 z-50 flex items-center justify-between px-4 md:px-8 py-3 bg-background/80 backdrop-blur-sm border-b border-border">
       {/* Logo */}
-      <button onClick={() => navigate("/")} className="text-xl font-bold tracking-tight text-foreground">
+      <button
+        onClick={() => navigate("/")}
+        className="text-xl font-bold tracking-tight text-foreground min-h-[44px] flex items-center"
+      >
         <span className="text-primary">H</span>uddle
       </button>
 
@@ -45,7 +48,7 @@ const AppHeader = () => {
         {/* Theme Toggle */}
         <button
           onClick={toggleTheme}
-          className="w-10 h-10 rounded-full bg-secondary border border-border flex items-center justify-center hover:bg-secondary/80 transition-colors"
+          className="w-10 h-10 rounded-full bg-secondary border border-border flex items-center justify-center hover:bg-secondary/80 transition-colors touch-manipulation"
           aria-label="Toggle theme"
         >
           {theme === "dark" ? (
@@ -77,19 +80,26 @@ const AppHeader = () => {
         {/* Mobile Hamburger */}
         <Sheet>
           <SheetTrigger asChild>
-            <button className="md:hidden w-10 h-10 rounded-full bg-secondary border border-border flex items-center justify-center hover:bg-secondary/80 transition-colors">
+            <button className="md:hidden w-10 h-10 rounded-full bg-secondary border border-border flex items-center justify-center hover:bg-secondary/80 transition-colors touch-manipulation">
               <Menu className="h-5 w-5 text-foreground" />
             </button>
           </SheetTrigger>
-          <SheetContent className="bg-background border-border">
-            <nav className="flex flex-col gap-2 mt-8">
+          <SheetContent side="right" className="bg-background border-border w-[280px] sm:w-[320px]">
+            {/* User greeting if authenticated */}
+            {isAuthenticated && user && (
+              <div className="mt-6 mb-2 px-2">
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Signed in as</p>
+                <p className="font-semibold text-foreground">{user.firstName} {user.lastName}</p>
+              </div>
+            )}
+            <nav className="flex flex-col gap-1 mt-6">
               {NAV_ITEMS.map((item) => (
                 <button
                   key={item.path}
                   onClick={() => navigate(item.path)}
-                  className={`text-left text-lg py-3 px-2 rounded-lg transition-colors ${
+                  className={`text-left text-base py-3 px-3 rounded-xl transition-colors touch-manipulation ${
                     location.pathname === item.path
-                      ? "text-primary bg-primary/10"
+                      ? "text-primary bg-primary/10 font-semibold"
                       : "text-foreground hover:text-primary hover:bg-secondary/50"
                   }`}
                 >
@@ -100,7 +110,7 @@ const AppHeader = () => {
                 {isAuthenticated ? (
                   <button
                     onClick={() => { logout(); navigate("/"); }}
-                    className="flex items-center gap-2 text-left text-lg py-3 px-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors w-full"
+                    className="flex items-center gap-2 text-left text-base py-3 px-3 rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors w-full touch-manipulation"
                   >
                     <LogOut className="h-5 w-5" />
                     Log out
@@ -108,7 +118,7 @@ const AppHeader = () => {
                 ) : (
                   <button
                     onClick={() => navigate("/get-started")}
-                    className="flex items-center gap-2 text-left text-lg py-3 px-2 rounded-lg text-primary hover:bg-primary/10 transition-colors w-full"
+                    className="flex items-center gap-2 text-left text-base py-3 px-3 rounded-xl text-primary hover:bg-primary/10 transition-colors w-full touch-manipulation"
                   >
                     <LogIn className="h-5 w-5" />
                     Log in
