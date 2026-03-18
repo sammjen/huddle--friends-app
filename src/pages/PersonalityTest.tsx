@@ -79,7 +79,7 @@ const PersonalityTest = () => {
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
-      const res = await fetch("/api/personality-results", {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/personality-results`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
