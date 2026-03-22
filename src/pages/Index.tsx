@@ -1,7 +1,11 @@
+import { useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
   Carousel,
   CarouselContent,
@@ -11,16 +15,8 @@ import {
 } from "@/components/ui/carousel";
 import { UserPlus, Clock, MessageCircle, Star, Instagram, Twitter, Youtube } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
-
-const REVIEWS = [
-  { quote: "I struggled to make friends after moving, but Huddle matched me with people who actually get me. Lifelong friends!", name: "Amanda", location: "San Francisco", stars: 5 },
-  { quote: "Finally have a squad to play pickup basketball with. This app changed my weekends.", name: "Thomas", location: "Cleveland", stars: 5 },
-  { quote: "The 24-hour drops keep it exciting. Every day feels like a new opportunity.", name: "LeBron", location: "Los Angeles", stars: 5 },
-  { quote: "I feel like I finally have a real support group. Not just online friends — real ones.", name: "Alice", location: "Dallas", stars: 4 },
-  { quote: "Found gym bros who actually show up. We've been consistent for 3 months now.", name: "Greg", location: "Provo", stars: 5 },
-  { quote: "Reconnected with an old friend by total chance. This app is magic.", name: "Ryan", location: "Austin", stars: 5 },
-  { quote: "As someone naturally introverted, this app gave me the confidence to join groups without the awkwardness. Best decision ever.", name: "Michael", location: "Boston", stars: 5 },
-];
+import { toast } from "@/hooks/use-toast";
+import { DEFAULT_REVIEWS, loadUserReviews, saveUserReviews, type Review } from "@/lib/reviews";
 
 const STEPS = [
   {
@@ -42,6 +38,45 @@ const STEPS = [
 
 const Index = () => {
   const navigate = useNavigate();
+  const [userReviews, setUserReviews] = useState<Review[]>(() => loadUserReviews());
+  const [quote, setQuote] = useState("");
+  const [reviewerName, setReviewerName] = useState("");
+  const [reviewerLocation, setReviewerLocation] = useState("");
+  const [stars, setStars] = useState(5);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const allReviews = useMemo(() => [...userReviews, ...DEFAULT_REVIEWS], [userReviews]);
+
+  const submitReview = (e: FormEvent) => {
+    e.preventDefault();
+    const q = quote.trim();
+    const n = reviewerName.trim();
+    const loc = reviewerLocation.trim();
+    if (q.length < 10) {
+      setFormError("Please write at least a few sentences (10+ characters).");
+      return;
+    }
+    if (!n || !loc) {
+      setFormError("Name and city are required.");
+      return;
+    }
+    setFormError(null);
+    const newReview: Review = {
+      id: crypto.randomUUID(),
+      quote: q,
+      name: n.slice(0, 80),
+      location: loc.slice(0, 80),
+      stars,
+    };
+    const next = [newReview, ...userReviews];
+    setUserReviews(next);
+    saveUserReviews(next);
+    setQuote("");
+    setReviewerName("");
+    setReviewerLocation("");
+    setStars(5);
+    toast({ title: "Thanks!", description: "Your review was added to the carousel." });
+  };
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -103,11 +138,89 @@ const Index = () => {
       <section className="px-4 sm:px-6 py-10 sm:py-12">
         <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-foreground text-center mb-1 sm:mb-2">What People Are Saying</h2>
         <p className="text-xs sm:text-sm text-muted-foreground text-center mb-6 sm:mb-8">Real stories from real users</p>
-        <div className="max-w-sm sm:max-w-xl md:max-w-4xl mx-auto">
+        <div className="max-w-sm sm:max-w-xl md:max-w-4xl mx-auto space-y-8 sm:space-y-10">
+          <form
+            onSubmit={submitReview}
+            className="bg-secondary/50 border border-border rounded-2xl p-4 sm:p-6 space-y-4"
+          >
+            <h3 className="text-sm sm:text-base font-semibold text-foreground text-center">Share your story</h3>
+            <div className="space-y-2">
+              <Label htmlFor="review-quote">Your review</Label>
+              <Textarea
+                id="review-quote"
+                value={quote}
+                onChange={(e) => {
+                  setFormError(null);
+                  setQuote(e.target.value);
+                }}
+                placeholder="Tell others what Huddle has been like for you…"
+                className="min-h-[100px] resize-y bg-background"
+                maxLength={600}
+                required
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="review-name">Name</Label>
+                <Input
+                  id="review-name"
+                  value={reviewerName}
+                  onChange={(e) => {
+                    setFormError(null);
+                    setReviewerName(e.target.value);
+                  }}
+                  placeholder="First name or nickname"
+                  maxLength={80}
+                  autoComplete="name"
+                  className="bg-background"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="review-location">City</Label>
+                <Input
+                  id="review-location"
+                  value={reviewerLocation}
+                  onChange={(e) => {
+                    setFormError(null);
+                    setReviewerLocation(e.target.value);
+                  }}
+                  placeholder="Where you're based"
+                  maxLength={80}
+                  autoComplete="address-level2"
+                  className="bg-background"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <span className="text-sm font-medium leading-none">Rating</span>
+              <div className="flex gap-1" role="group" aria-label="Star rating">
+                {Array.from({ length: 5 }).map((_, i) => {
+                  const value = i + 1;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setStars(value)}
+                      className="p-0.5 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={`${value} star${value === 1 ? "" : "s"}`}
+                    >
+                      <Star
+                        className={`w-6 h-6 sm:w-7 sm:h-7 ${value <= stars ? "text-primary fill-primary" : "text-muted-foreground/30"}`}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
+            <Button type="submit" className="w-full rounded-full font-semibold">
+              Submit review
+            </Button>
+          </form>
           <Carousel className="w-full">
             <CarouselContent>
-              {REVIEWS.map((r) => (
-                <CarouselItem key={r.name} className="sm:basis-1/2 lg:basis-1/3">
+              {allReviews.map((r) => (
+                <CarouselItem key={r.id} className="sm:basis-1/2 lg:basis-1/3">
                   <div className="bg-secondary/50 border border-border rounded-2xl p-4 sm:p-6 space-y-3 sm:space-y-4 h-full">
                     <div className="flex gap-0.5">
                       {Array.from({ length: 5 }).map((_, i) => (
