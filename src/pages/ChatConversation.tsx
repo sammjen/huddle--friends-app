@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useParams, Navigate } from "react-router-dom";
-import { ArrowLeft, Send } from "lucide-react";
+import { ArrowLeft, Send, Pencil, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/AuthProvider";
 
@@ -10,6 +10,7 @@ interface Message {
   text: string;
   isMe: boolean;
   time: string;
+  edited: boolean;
 }
 
 const ChatConversation = () => {
@@ -20,6 +21,8 @@ const ChatConversation = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [groupName, setGroupName] = useState("Chat");
   const [memberCount, setMemberCount] = useState(0);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -45,7 +48,7 @@ const ChatConversation = () => {
     // Fetch messages
     fetch(`/api/messages/${groupId}`)
       .then((res) => res.json())
-      .then((data: { id: number; message: string; sent_time: string; user_id: number | null; username: string | null }[]) => {
+      .then((data: { id: number; message: string; sent_time: string; user_id: number | null; username: string | null; edited: number }[]) => {
         setMessages(
           data.map((m) => ({
             id: String(m.id),
@@ -53,6 +56,7 @@ const ChatConversation = () => {
             text: m.message,
             isMe: m.user_id === user?.id,
             time: new Date(m.sent_time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+            edited: m.edited === 1,
           }))
         );
       })
@@ -78,20 +82,61 @@ const ChatConversation = () => {
         text,
         isMe: true,
         time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+        edited: false,
       },
     ]);
 
     try {
-      await fetch("/api/messages", {
+      const res = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user?.id, groupId: Number(groupId), message: text }),
       });
+      if (res.ok) {
+        const saved = await res.json();
+        setMessages((prev) =>
+          prev.map((m) => (m.id === optimisticId ? { ...m, id: String(saved.id) } : m))
+        );
+      }
     } catch (err) {
       console.error("Failed to send message:", err);
     }
 
     setTimeout(() => inputRef.current?.focus(), 10);
+  };
+
+  const startEditing = (msg: Message) => {
+    setEditingId(msg.id);
+    setSelectedId(null);
+    setMessage(msg.text);
+    setTimeout(() => inputRef.current?.focus(), 10);
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setMessage("");
+  };
+
+  const handleEdit = async () => {
+    if (!message.trim() || !editingId) return;
+    const text = message.trim();
+
+    setMessages((prev) =>
+      prev.map((m) => (m.id === editingId ? { ...m, text, edited: true } : m))
+    );
+    const savedEditingId = editingId;
+    setEditingId(null);
+    setMessage("");
+
+    try {
+      await fetch(`/api/messages/${savedEditingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user?.id, message: text }),
+      });
+    } catch (err) {
+      console.error("Failed to edit message:", err);
+    }
   };
 
   const shouldShowSender = (index: number) => {
@@ -117,9 +162,14 @@ const ChatConversation = () => {
       </header>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-3 sm:px-4 md:px-6 py-3 sm:py-4 space-y-1 overscroll-contain">
+      <div
+        className="flex-1 overflow-y-auto px-3 sm:px-4 md:px-6 py-3 sm:py-4 space-y-1 overscroll-contain"
+        onClick={() => setSelectedId(null)}
+      >
         {messages.map((msg, i) => {
           const showSender = shouldShowSender(i);
+          const isSelected = selectedId === msg.id;
+          const isLastInGroup = i === messages.length - 1 || messages[i + 1]?.sender !== msg.sender;
           return (
             <div
               key={msg.id}
@@ -128,18 +178,43 @@ const ChatConversation = () => {
               {!msg.isMe && showSender && (
                 <span className="text-[11px] sm:text-xs text-muted-foreground mb-1 ml-1 font-medium">{msg.sender}</span>
               )}
-              <div
-                className={`max-w-[82%] sm:max-w-[75%] px-3 sm:px-4 py-2 sm:py-2.5 text-sm shadow-sm ${
-                  msg.isMe
-                    ? "bg-primary text-primary-foreground rounded-2xl rounded-br-sm"
-                    : "bg-card text-card-foreground rounded-2xl rounded-bl-sm"
-                }`}
-              >
-                {msg.text}
+              <div className="relative">
+                <div
+                  onClick={(e) => {
+                    if (msg.isMe && !editingId) {
+                      e.stopPropagation();
+                      setSelectedId(isSelected ? null : msg.id);
+                    }
+                  }}
+                  className={`max-w-[82%] sm:max-w-[75%] px-3 sm:px-4 py-2 sm:py-2.5 text-sm shadow-sm ${
+                    msg.isMe
+                      ? `bg-primary text-primary-foreground rounded-2xl rounded-br-sm ${!editingId ? "cursor-pointer active:opacity-80" : ""}`
+                      : "bg-card text-card-foreground rounded-2xl rounded-bl-sm"
+                  } ${editingId === msg.id ? "ring-2 ring-primary/50" : ""}`}
+                >
+                  {msg.text}
+                </div>
+                {isSelected && msg.isMe && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); startEditing(msg); }}
+                    className="absolute -top-8 right-0 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-secondary border border-border shadow-md text-xs font-medium text-foreground hover:bg-secondary/80 transition-colors"
+                  >
+                    <Pencil className="h-3 w-3" />
+                    Edit
+                  </button>
+                )}
               </div>
-              {(i === messages.length - 1 || messages[i + 1]?.sender !== msg.sender) && (
-                <span className="text-[10px] text-muted-foreground mt-1 mx-1">{msg.time}</span>
-              )}
+              <div className={`flex items-center gap-1.5 mt-0.5 mx-1 ${msg.isMe ? "flex-row-reverse" : ""}`}>
+                {msg.edited && (
+                  <span className="text-[10px] text-muted-foreground/70 italic flex items-center gap-0.5">
+                    <Pencil className="h-2.5 w-2.5" />
+                    edited
+                  </span>
+                )}
+                {isLastInGroup && (
+                  <span className="text-[10px] text-muted-foreground">{msg.time}</span>
+                )}
+              </div>
             </div>
           );
         })}
@@ -148,27 +223,51 @@ const ChatConversation = () => {
 
       {/* Input */}
       <div
-        className="flex-shrink-0 px-3 sm:px-4 py-2.5 sm:py-3 bg-background border-t border-border"
+        className="flex-shrink-0 bg-background border-t border-border"
         style={{ paddingBottom: "max(0.625rem, env(safe-area-inset-bottom))" }}
       >
-        <div className="flex gap-2 items-center max-w-4xl mx-auto">
+        {editingId && (
+          <div className="flex items-center justify-between px-4 py-1.5 bg-secondary/60 border-b border-border">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Pencil className="h-3 w-3 text-primary" />
+              <span>Editing message</span>
+            </div>
+            <button
+              onClick={cancelEditing}
+              className="p-1 rounded-full hover:bg-secondary transition-colors"
+              aria-label="Cancel editing"
+            >
+              <X className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          </div>
+        )}
+        <div className="flex gap-2 items-center max-w-4xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3">
           <Input
             ref={inputRef}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-            placeholder="Type a message..."
-            className="flex-1 rounded-full bg-secondary border-border h-10 sm:h-11 text-base"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                editingId ? handleEdit() : handleSend();
+              }
+              if (e.key === "Escape" && editingId) cancelEditing();
+            }}
+            placeholder={editingId ? "Edit your message..." : "Type a message..."}
+            className={`flex-1 rounded-full bg-secondary border-border h-10 sm:h-11 text-base ${editingId ? "ring-1 ring-primary/30" : ""}`}
             autoComplete="off"
             autoCorrect="on"
           />
           <button
-            onClick={handleSend}
+            onClick={editingId ? handleEdit : handleSend}
             disabled={!message.trim()}
             className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-primary flex items-center justify-center flex-shrink-0 hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
-            aria-label="Send message"
+            aria-label={editingId ? "Save edit" : "Send message"}
           >
-            <Send className="h-4 w-4 sm:h-5 sm:h-5 text-primary-foreground" />
+            {editingId ? (
+              <Pencil className="h-4 w-4 sm:h-5 sm:w-5 text-primary-foreground" />
+            ) : (
+              <Send className="h-4 w-4 sm:h-5 sm:w-5 text-primary-foreground" />
+            )}
           </button>
         </div>
       </div>

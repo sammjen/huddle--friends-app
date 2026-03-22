@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS message (
   groupchat_id INTEGER NOT NULL REFERENCES groupchat(id) ON DELETE CASCADE,
   message TEXT NOT NULL,
   sent_time TEXT DEFAULT (datetime('now')),
-  delivered INTEGER DEFAULT 0
+  delivered INTEGER DEFAULT 0,
+  edited INTEGER DEFAULT 0
 );
 
 -- Junction: users ↔ groupchats (many-to-many)

@@ -18,6 +18,19 @@ const db = new Database(dbPath);
 app.use(cors());
 app.use(express.json());
 
+// Auto-migrate: add columns that may not exist in older databases
+const migrations = [
+  "ALTER TABLE message ADD COLUMN edited INTEGER DEFAULT 0",
+  "ALTER TABLE user ADD COLUMN display_name TEXT",
+  "ALTER TABLE user ADD COLUMN bio TEXT",
+  "ALTER TABLE user ADD COLUMN email TEXT",
+  "ALTER TABLE user ADD COLUMN profile_photo TEXT",
+  "ALTER TABLE user ADD COLUMN hobbies TEXT DEFAULT '[]'",
+];
+for (const sql of migrations) {
+  try { db.exec(sql); } catch (_) { /* column already exists */ }
+}
+
 // Question texts (match templatePersonalityQuestion order)
 const PERSONALITY_QUESTIONS = [
   "How often do you go out of your way to talk to new people at a group event?",
@@ -172,7 +185,7 @@ app.get("/api/messages/:groupId", (req, res) => {
     const { groupId } = req.params;
     const messages = db
       .prepare(
-        `SELECT m.id, m.message, m.sent_time, m.user_id, u.username
+        `SELECT m.id, m.message, m.sent_time, m.user_id, m.edited, u.username
         FROM message m
         LEFT JOIN user u ON m.user_id = u.id
         WHERE m.groupchat_id = ?
@@ -198,7 +211,7 @@ app.post("/api/messages", (req, res) => {
       .run(userId || null, groupId, message);
     const row = db
       .prepare(
-        `SELECT m.id, m.message, m.sent_time, m.user_id, u.username
+        `SELECT m.id, m.message, m.sent_time, m.user_id, m.edited, u.username
         FROM message m LEFT JOIN user u ON m.user_id = u.id
         WHERE m.id = ?`
       )
@@ -207,6 +220,34 @@ app.post("/api/messages", (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to send message." });
+  }
+});
+
+// PUT /api/messages/:id - Edit a message (only the sender can edit)
+app.put("/api/messages/:id", (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId, message } = req.body;
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: "Message text is required." });
+    }
+    const existing = db.prepare("SELECT user_id FROM message WHERE id = ?").get(id);
+    if (!existing) return res.status(404).json({ error: "Message not found." });
+    if (existing.user_id !== userId) {
+      return res.status(403).json({ error: "You can only edit your own messages." });
+    }
+    db.prepare("UPDATE message SET message = ?, edited = 1 WHERE id = ?").run(message.trim(), id);
+    const row = db
+      .prepare(
+        `SELECT m.id, m.message, m.sent_time, m.user_id, m.edited, u.username
+        FROM message m LEFT JOIN user u ON m.user_id = u.id
+        WHERE m.id = ?`
+      )
+      .get(id);
+    res.json(row);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to edit message." });
   }
 });
 

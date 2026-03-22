@@ -17,6 +17,14 @@ console.log("Initializing database at", dbPath);
 db.exec(readFileSync(schemaPath, "utf-8"));
 console.log("Schema created.");
 
+// Migrations: add columns that may not exist in older databases
+const migrations = [
+  "ALTER TABLE message ADD COLUMN edited INTEGER DEFAULT 0",
+];
+for (const sql of migrations) {
+  try { db.exec(sql); } catch (_) { /* column already exists */ }
+}
+
 db.exec(readFileSync(seedPath, "utf-8"));
 console.log("Seed data inserted.");
 
