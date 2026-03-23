@@ -129,12 +129,12 @@ app.post("/api/login", async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: "Username and password required." });
     const user = db
-      .prepare("SELECT id, username, city, password FROM user WHERE username = ?")
+      .prepare("SELECT id, username, city, password, display_name, role FROM user WHERE username = ?")
       .get(username);
     if (!user) return res.status(404).json({ error: "User not found." });
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(401).json({ error: "Incorrect password." });
-    res.json({ id: user.id, username: user.username, city: user.city });
+    res.json({ id: user.id, username: user.username, city: user.city, display_name: user.display_name, role: user.role || "user" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to login." });
@@ -256,10 +256,10 @@ app.get("/api/profile/:userId", (req, res) => {
   try {
     const { userId } = req.params;
     const user = db
-      .prepare("SELECT id, username, display_name, bio, city, email, profile_photo, hobbies FROM user WHERE id = ?")
+      .prepare("SELECT id, username, display_name, bio, city, email, profile_photo, hobbies, role FROM user WHERE id = ?")
       .get(userId);
     if (!user) return res.status(404).json({ error: "User not found." });
-    res.json({ ...user, hobbies: user.hobbies ? JSON.parse(user.hobbies) : [] });
+    res.json({ ...user, role: user.role || "user", hobbies: user.hobbies ? JSON.parse(user.hobbies) : [] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch profile." });

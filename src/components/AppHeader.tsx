@@ -66,18 +66,27 @@ const AppHeader = () => {
 
         {/* Auth Controls (desktop) */}
         {isAuthenticated ? (
-          <button
-            onClick={() => navigate("/profile")}
-            className="hidden md:flex items-center gap-2 pl-1 pr-3 py-1 rounded-full hover:bg-secondary/70 transition-colors touch-manipulation"
-            aria-label="Profile"
-          >
-            <Avatar className="w-8 h-8">
-              <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">{initials}</AvatarFallback>
-            </Avatar>
-            <span className="text-sm font-medium text-foreground max-w-[100px] truncate">
-              {user?.displayName || user?.username}
-            </span>
-          </button>
+          <div className="hidden md:flex items-center gap-1">
+            <button
+              onClick={() => navigate("/profile")}
+              className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full hover:bg-secondary/70 transition-colors touch-manipulation"
+              aria-label="Profile"
+            >
+              <Avatar className="w-8 h-8">
+                <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">{initials}</AvatarFallback>
+              </Avatar>
+              <span className="text-sm font-medium text-foreground max-w-[100px] truncate">
+                {user?.displayName || user?.username}
+              </span>
+            </button>
+            <button
+              onClick={() => { logout(); navigate("/"); }}
+              className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/70 transition-colors touch-manipulation"
+              aria-label="Log out"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
         ) : (
           <button
             onClick={() => navigate("/get-started")}

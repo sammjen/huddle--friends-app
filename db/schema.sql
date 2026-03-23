@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS user (
   bio TEXT,
   email TEXT,
   profile_photo TEXT,
-  hobbies TEXT DEFAULT '[]'
+  hobbies TEXT DEFAULT '[]',
+  role TEXT NOT NULL DEFAULT 'user'
 );
 
 -- Reviews (user_id references user)

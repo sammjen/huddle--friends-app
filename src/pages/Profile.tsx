@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
-import { Camera, X, Plus, Lock, User, MapPin, Mail, Sparkles, Shield } from "lucide-react";
+import { Camera, X, Plus, Lock, User, MapPin, Mail, Sparkles, Shield, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -51,7 +51,8 @@ const SectionCard = ({ icon: Icon, title, children }: { icon: React.ElementType;
 
 const Profile = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, logout } = useAuth();
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Profile section
@@ -453,6 +454,38 @@ const Profile = () => {
             {savingPassword ? "Updating..." : "Update Password"}
           </Button>
         </SectionCard>
+
+        {/* ── Log Out ── */}
+        <div className="bg-card rounded-2xl p-5 sm:p-6 shadow-sm border border-border/50">
+          {!showLogoutConfirm ? (
+            <button
+              onClick={() => setShowLogoutConfirm(true)}
+              className="w-full flex items-center justify-center gap-2 text-destructive hover:text-destructive/80 font-semibold text-sm py-2 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              Log Out
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-center text-foreground font-medium">Are you sure you want to log out?</p>
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="flex-1 h-11 rounded-xl font-semibold"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => { logout(); navigate("/"); }}
+                  className="flex-1 h-11 rounded-xl font-semibold bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                >
+                  Log Out
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Bottom padding for mobile */}
         <div className="h-6" />

@@ -50,7 +50,7 @@ const GetStarted = () => {
         setError(data.error || "Something went wrong.");
         return;
       }
-      login({ id: data.id, username: data.username, displayName: data.username });
+      login({ id: data.id, username: data.username, displayName: data.display_name || data.username, role: data.role || "user" });
       navigate("/chats");
     } catch {
       setError("Could not connect to server.");
@@ -75,7 +75,7 @@ const GetStarted = () => {
         setError(data.error || "Something went wrong.");
         return;
       }
-      login({ id: data.id, username: data.username, displayName: data.display_name || displayName });
+      login({ id: data.id, username: data.username, displayName: data.display_name || displayName, role: data.role || "user" });
       navigate("/personality-test");
     } catch {
       setError("Could not connect to server. Make sure the backend is running.");
