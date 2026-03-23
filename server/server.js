@@ -42,7 +42,7 @@ const PERSONALITY_QUESTIONS = [
 // POST /api/personality-results - Submit personality test results (into personalitytest + personalityquestion)
 app.post("/api/personality-results", (req, res) => {
   try {
-    const { q1, q2, q3, q4 } = req.body;
+    const { q1, q2, q3, q4, userId } = req.body;
     const answers = [q1, q2, q3, q4];
 
     if (answers.some((a) => typeof a !== "number")) {
@@ -53,9 +53,9 @@ app.post("/api/personality-results", (req, res) => {
 
     const resultsJson = JSON.stringify({ q1, q2, q3, q4 });
     const insertTest = db.prepare(
-      `INSERT INTO personalitytest (user_id, results, template_id) VALUES (NULL, ?, 1)`
+      `INSERT INTO personalitytest (user_id, results, template_id) VALUES (?, ?, 1)`
     );
-    const result = insertTest.run(resultsJson);
+    const result = insertTest.run(userId || null, resultsJson);
     const testId = result.lastInsertRowid;
 
     const insertQuestion = db.prepare(
@@ -93,6 +93,24 @@ app.get("/api/personality-results/count", (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch count." });
+  }
+});
+
+// GET /api/profile/:userId/personality-results - Get latest personality test for user
+app.get("/api/profile/:userId/personality-results", (req, res) => {
+  try {
+    const { userId } = req.params;
+    const row = db
+      .prepare(
+        "SELECT id, results FROM personalitytest WHERE user_id = ? ORDER BY id DESC LIMIT 1"
+      )
+      .get(userId);
+    if (!row) return res.status(404).json({ error: "No results found." });
+    const results = row.results ? JSON.parse(row.results) : null;
+    res.json({ id: row.id, results });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch results." });
   }
 });
 
@@ -309,6 +327,28 @@ app.put("/api/profile/:userId/password", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to update password." });
+  }
+});
+
+// PUT /api/profile/:userId/username - Change username
+app.put("/api/profile/:userId/username", (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { username } = req.body;
+    const trimmed = (username || "").trim();
+    if (!trimmed) return res.status(400).json({ error: "Username is required." });
+    const existing = db
+      .prepare("SELECT id FROM user WHERE username = ? AND id != ?")
+      .get(trimmed, userId);
+    if (existing) return res.status(409).json({ error: "Username already exists." });
+    db.prepare("UPDATE user SET username = ? WHERE id = ?").run(trimmed, userId);
+    const updated = db
+      .prepare("SELECT id, username, display_name FROM user WHERE id = ?")
+      .get(userId);
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update username." });
   }
 });
 

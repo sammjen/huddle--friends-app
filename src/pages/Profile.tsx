@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
-import { Camera, X, Plus, Lock, User, MapPin, Mail, Sparkles, Shield, LogOut } from "lucide-react";
+import { Camera, X, Plus, Lock, User, MapPin, Mail, Sparkles, Shield, LogOut, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Progress } from "@/components/ui/progress";
 import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/components/AuthProvider";
 import { toast } from "sonner";
@@ -18,6 +19,37 @@ interface ProfileData {
   profile_photo: string;
   hobbies: string[];
 }
+
+const PERSONALITY_QUESTIONS = [
+  {
+    key: "q1",
+    question: "How often do you go out of your way to talk to new people at a group event?",
+    min: "Rarely",
+    max: "Frequently",
+    maxValue: 100,
+  },
+  {
+    key: "q2",
+    question: "How many nights a week do you spend out with friends?",
+    min: "0",
+    max: "7",
+    maxValue: 7,
+  },
+  {
+    key: "q3",
+    question: "Do you find yourself talking with people similar or different to yourself?",
+    min: "Similar",
+    max: "Different",
+    maxValue: 100,
+  },
+  {
+    key: "q4",
+    question: "How often do you talk to new people daily — at work, school, or around town?",
+    min: "Rarely",
+    max: "Frequently",
+    maxValue: 100,
+  },
+];
 
 const resizeImage = (file: File, maxPx: number): Promise<string> =>
   new Promise((resolve) => {
@@ -51,7 +83,7 @@ const SectionCard = ({ icon: Icon, title, children }: { icon: React.ElementType;
 
 const Profile = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, user, logout, login } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -71,7 +103,13 @@ const Profile = () => {
   const [hobbyInput, setHobbyInput] = useState("");
   const [savingHobbies, setSavingHobbies] = useState(false);
 
+  // Personality results
+  const [personalityResults, setPersonalityResults] = useState<Record<string, number> | null>(null);
+  const [loadingPersonality, setLoadingPersonality] = useState(false);
+
   // Security section
+  const [username, setUsername] = useState("");
+  const [savingUsername, setSavingUsername] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
@@ -87,6 +125,7 @@ const Profile = () => {
       .then((r) => r.json())
       .then((data) => {
         setDisplayName(data.display_name || user.displayName || "");
+        setUsername(data.username || user.username || "");
         setBio(data.bio || "");
         setCity(data.city || "");
         setEmail(data.email || "");
@@ -95,6 +134,22 @@ const Profile = () => {
       })
       .catch(() => toast.error("Couldn't load profile."))
       .finally(() => setLoading(false));
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user) return;
+    setLoadingPersonality(true);
+    fetch(`/api/profile/${user.id}/personality-results`)
+      .then(async (r) => {
+        if (r.status === 404) return null;
+        if (!r.ok) throw new Error();
+        return r.json();
+      })
+      .then((data) => {
+        setPersonalityResults(data?.results || null);
+      })
+      .catch(() => toast.error("Couldn't load personality results."))
+      .finally(() => setLoadingPersonality(false));
   }, [user?.id]);
 
   const initials = (displayName || user?.username || "?")
@@ -135,6 +190,13 @@ const Profile = () => {
         body: JSON.stringify({ display_name: displayName, bio, city, email, profile_photo: profilePhoto, hobbies }),
       });
       if (!res.ok) throw new Error();
+      const updated = await res.json();
+      login({
+        id: user.id,
+        username: user.username,
+        displayName: updated.display_name || displayName || user.username,
+        role: user.role,
+      });
       toast.success("Profile saved!");
     } catch {
       toast.error("Couldn't save profile.");
@@ -153,6 +215,13 @@ const Profile = () => {
         body: JSON.stringify({ display_name: displayName, bio, city, email, profile_photo: profilePhoto, hobbies }),
       });
       if (!res.ok) throw new Error();
+      const updated = await res.json();
+      login({
+        id: user.id,
+        username: user.username,
+        displayName: updated.display_name || displayName || user.username,
+        role: user.role,
+      });
       toast.success("Info saved!");
     } catch {
       toast.error("Couldn't save info.");
@@ -171,11 +240,56 @@ const Profile = () => {
         body: JSON.stringify({ display_name: displayName, bio, city, email, profile_photo: profilePhoto, hobbies }),
       });
       if (!res.ok) throw new Error();
+      const updated = await res.json();
+      login({
+        id: user.id,
+        username: user.username,
+        displayName: updated.display_name || displayName || user.username,
+        role: user.role,
+      });
       toast.success("Interests saved!");
     } catch {
       toast.error("Couldn't save interests.");
     } finally {
       setSavingHobbies(false);
+    }
+  };
+
+  const saveUsername = async () => {
+    if (!user) return;
+    const trimmed = username.trim();
+    if (!trimmed) {
+      toast.error("Username can't be empty.");
+      return;
+    }
+    if (trimmed === user.username) {
+      toast.success("Username is already up to date.");
+      return;
+    }
+    setSavingUsername(true);
+    try {
+      const res = await fetch(`/api/profile/${user.id}/username`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Couldn't update username.");
+        return;
+      }
+      setUsername(data.username || trimmed);
+      login({
+        id: user.id,
+        username: data.username || trimmed,
+        displayName: displayName || user.displayName || trimmed,
+        role: user.role,
+      });
+      toast.success("Username updated!");
+    } catch {
+      toast.error("Couldn't update username.");
+    } finally {
+      setSavingUsername(false);
     }
   };
 
@@ -400,12 +514,74 @@ const Profile = () => {
           </Button>
         </SectionCard>
 
+        {/* ── Personality Test Card ── */}
+        <SectionCard icon={CheckCircle2} title="Personality Test">
+          {loadingPersonality && (
+            <p className="text-sm text-muted-foreground">Loading your results...</p>
+          )}
+
+          {!loadingPersonality && !personalityResults && (
+            <>
+              <p className="text-sm text-muted-foreground mb-4">
+                You haven't taken the personality test yet.
+              </p>
+              <Button
+                onClick={() => navigate("/personality-test")}
+                variant="outline"
+                className="w-full h-11 rounded-xl font-semibold"
+              >
+                Take Personality Test
+              </Button>
+            </>
+          )}
+
+          {!loadingPersonality && personalityResults && (
+            <div className="space-y-4">
+              {PERSONALITY_QUESTIONS.map((q) => {
+                const value = Number(personalityResults[q.key]);
+                const pct = Math.round((value / q.maxValue) * 100);
+                return (
+                  <div key={q.key} className="space-y-2">
+                    <p className="text-sm font-medium text-foreground">{q.question}</p>
+                    <Progress value={pct} className="h-2" />
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{q.min}</span>
+                      <span className="text-primary font-semibold">{value}</span>
+                      <span>{q.max}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </SectionCard>
+
         {/* ── Security Card ── */}
         <SectionCard icon={Shield} title="Security">
           <p className="text-xs text-muted-foreground mb-4">
             Choose a strong password you don't use elsewhere.
           </p>
-          <div className="space-y-3">
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <User className="w-3 h-3" /> Username
+              </Label>
+              <Input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="your_username"
+                className="bg-secondary/50 border-border h-10"
+                autoComplete="username"
+              />
+              <Button
+                onClick={saveUsername}
+                disabled={savingUsername || !username.trim()}
+                variant="outline"
+                className="w-full mt-2 h-10 rounded-xl font-semibold"
+              >
+                {savingUsername ? "Updating..." : "Update Username"}
+              </Button>
+            </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <Lock className="w-3 h-3" /> Current Password

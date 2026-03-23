@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { CheckCircle2, ArrowLeft } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
+import { useAuth } from "@/components/AuthProvider";
 
 const QUESTIONS = [
   {
@@ -45,6 +46,7 @@ const QUESTIONS = [
 
 const PersonalityTest = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState<number[]>(QUESTIONS.map((q) => q.defaultValue));
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -87,6 +89,7 @@ const PersonalityTest = () => {
           q2: answers[1],
           q3: answers[2],
           q4: answers[3],
+          userId: user?.id || null,
         }),
       });
       if (!res.ok) {
