@@ -12,6 +12,7 @@ import ChatList from "./pages/ChatList";
 import ChatConversation from "./pages/ChatConversation";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
+import Admin from "./pages/Admin";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +31,7 @@ const App = () => (
             <Route path="/chats" element={<ChatList />} />
             <Route path="/chat/:groupId" element={<ChatConversation />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/admin" element={<Admin />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

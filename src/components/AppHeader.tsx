@@ -1,4 +1,4 @@
-import { Menu, Moon, Sun, LogOut, LogIn, Settings } from "lucide-react";
+import { Menu, Moon, Sun, LogOut, LogIn, Settings, Shield } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -48,6 +48,19 @@ const AppHeader = () => {
             {item.label}
           </button>
         ))}
+        {user?.role === "admin" && (
+          <button
+            onClick={() => navigate("/admin")}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5 ${
+              location.pathname === "/admin"
+                ? "text-primary bg-primary/10"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+            }`}
+          >
+            <Shield className="h-3.5 w-3.5" />
+            Admin
+          </button>
+        )}
       </nav>
 
       <div className="justify-self-end flex items-center gap-2">
@@ -145,6 +158,15 @@ const AppHeader = () => {
                       <Settings className="h-5 w-5 text-muted-foreground" />
                       Profile & Settings
                     </button>
+                    {user?.role === "admin" && (
+                      <button
+                        onClick={() => navigate("/admin")}
+                        className="flex items-center gap-2 text-left text-base py-3 px-3 rounded-xl text-foreground hover:bg-secondary/50 transition-colors w-full touch-manipulation"
+                      >
+                        <Shield className="h-5 w-5 text-muted-foreground" />
+                        Admin Dashboard
+                      </button>
+                    )}
                     <button
                       onClick={() => { logout(); navigate("/"); }}
                       className="flex items-center gap-2 text-left text-base py-3 px-3 rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors w-full touch-manipulation"

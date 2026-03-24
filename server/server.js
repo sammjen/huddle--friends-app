@@ -27,10 +27,33 @@ const migrations = [
   "ALTER TABLE user ADD COLUMN email TEXT",
   "ALTER TABLE user ADD COLUMN profile_photo TEXT",
   "ALTER TABLE user ADD COLUMN hobbies TEXT DEFAULT '[]'",
+  "ALTER TABLE user ADD COLUMN role TEXT NOT NULL DEFAULT 'user'",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (_) { /* column already exists */ }
 }
+
+// Ensure default admin user exists
+const adminExists = db.prepare("SELECT id FROM user WHERE username = 'admin'").get();
+if (!adminExists) {
+  const hashed = bcrypt.hashSync("admin123", 10);
+  const result = db
+    .prepare("INSERT INTO user (username, password, display_name, role) VALUES (?, ?, ?, ?)")
+    .run("admin", hashed, "Admin", "admin");
+  const adminId = result.lastInsertRowid;
+  const groupchats = db.prepare("SELECT id FROM groupchat WHERE active = 1").all();
+  const insertMembership = db.prepare("INSERT OR IGNORE INTO user_groupchat (user_id, groupchat_id) VALUES (?, ?)");
+  for (const gc of groupchats) insertMembership.run(adminId, gc.id);
+}
+
+// Admin middleware — expects ?userId=<id> on GET or { userId } in body
+const requireAdmin = (req, res, next) => {
+  const userId = req.query.userId || req.body?.userId;
+  if (!userId) return res.status(401).json({ error: "Authentication required." });
+  const user = db.prepare("SELECT role FROM user WHERE id = ?").get(userId);
+  if (!user || user.role !== "admin") return res.status(403).json({ error: "Admin access required." });
+  next();
+};
 
 // Ensure normalized hobby tables exist (idempotent)
 db.exec(`
@@ -479,6 +502,99 @@ app.put("/api/profile/:userId/username", (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to update username." });
+  }
+});
+
+// GET /api/admin/stats - Overview counts
+app.get("/api/admin/stats", requireAdmin, (req, res) => {
+  try {
+    const userCount = db.prepare("SELECT COUNT(*) as count FROM user").get();
+    const adminCount = db.prepare("SELECT COUNT(*) as count FROM user WHERE role = 'admin'").get();
+    const messageCount = db.prepare("SELECT COUNT(*) as count FROM message").get();
+    const groupchatCount = db.prepare("SELECT COUNT(*) as count FROM groupchat WHERE active = 1").get();
+    const personalityCount = db.prepare("SELECT COUNT(*) as count FROM personalitytest").get();
+    res.json({
+      users: userCount.count,
+      admins: adminCount.count,
+      messages: messageCount.count,
+      groupchats: groupchatCount.count,
+      personalityTests: personalityCount.count,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch stats." });
+  }
+});
+
+// GET /api/admin/users - All users
+app.get("/api/admin/users", requireAdmin, (req, res) => {
+  try {
+    const users = db
+      .prepare("SELECT id, username, display_name, city, email, role, active FROM user ORDER BY id ASC")
+      .all();
+    res.json(users);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch users." });
+  }
+});
+
+// PUT /api/admin/users/:id/role - Change a user's role
+app.put("/api/admin/users/:id/role", requireAdmin, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body;
+    if (!["user", "admin"].includes(role)) {
+      return res.status(400).json({ error: "Role must be 'user' or 'admin'." });
+    }
+    const target = db.prepare("SELECT id FROM user WHERE id = ?").get(id);
+    if (!target) return res.status(404).json({ error: "User not found." });
+    db.prepare("UPDATE user SET role = ? WHERE id = ?").run(role, id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update role." });
+  }
+});
+
+// GET /api/admin/groupchats - All groupchats with member counts
+app.get("/api/admin/groupchats", requireAdmin, (req, res) => {
+  try {
+    const groups = db
+      .prepare(`
+        SELECT g.id, g.name, g.chat_photo, g.active,
+          (SELECT COUNT(*) FROM user_groupchat WHERE groupchat_id = g.id) as member_count,
+          (SELECT COUNT(*) FROM message WHERE groupchat_id = g.id) as message_count
+        FROM groupchat g ORDER BY g.id ASC
+      `)
+      .all();
+    res.json(groups);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch groupchats." });
+  }
+});
+
+// GET /api/admin/messages - Recent messages across all chats
+app.get("/api/admin/messages", requireAdmin, (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const messages = db
+      .prepare(`
+        SELECT m.id, m.message, m.sent_time, m.edited,
+          u.username, u.display_name,
+          g.name as groupchat_name
+        FROM message m
+        LEFT JOIN user u ON m.user_id = u.id
+        LEFT JOIN groupchat g ON m.groupchat_id = g.id
+        ORDER BY m.sent_time DESC
+        LIMIT ?
+      `)
+      .all(limit);
+    res.json(messages);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch messages." });
   }
 });
 
