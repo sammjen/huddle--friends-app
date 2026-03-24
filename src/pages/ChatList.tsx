@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Users, MessageCircle, LogIn, UserPlus } from "lucide-react";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/components/AuthProvider";
 
@@ -65,7 +67,7 @@ const ChatList = () => {
     fetch(`/api/groups/${user.id}`)
       .then((res) => res.json())
       .then((data) => setGroups(Array.isArray(data) ? data : []))
-      .catch(console.error)
+      .catch(() => toast.error("Couldn't load groups."))
       .finally(() => setLoading(false));
   }, [isAuthenticated, user]);
 
@@ -126,7 +128,19 @@ const ChatList = () => {
             </h2>
 
             {loading ? (
-              <p className="text-sm text-muted-foreground">Loading groups...</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="bg-card rounded-2xl p-3 sm:p-4 shadow-sm">
+                    <div className="flex items-center gap-3">
+                      <Skeleton className="w-11 h-11 sm:w-12 sm:h-12 rounded-full flex-shrink-0" />
+                      <div className="flex-1 space-y-2">
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-3 w-48" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : groups.length === 0 ? (
               <p className="text-sm text-muted-foreground">You're not in any groups yet. Check back after the next introduction!</p>
             ) : (

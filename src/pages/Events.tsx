@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface EventRow {
   id: number;
@@ -353,7 +354,20 @@ const Events = () => {
           ) : null}
 
           {loading ? (
-            <p className="text-sm text-muted-foreground">Loading events...</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[1, 2].map((i) => (
+                <Card key={i} className="border-border/70">
+                  <CardHeader>
+                    <Skeleton className="h-6 w-40" />
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <Skeleton className="h-4 w-52" />
+                    <Skeleton className="h-4 w-36" />
+                    <Skeleton className="h-10 w-24 rounded-lg" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           ) : events.length === 0 ? (
             <Card>
               <CardContent className="py-10 text-center">

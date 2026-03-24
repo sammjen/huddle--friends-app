@@ -7,8 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Users, MessageSquare, LayoutDashboard, Shield, FlaskConical, RefreshCw } from "lucide-react";
 
-const API = "http://localhost:3001";
-
 interface Stats {
   users: number;
   admins: number;
@@ -69,10 +67,10 @@ const Admin = () => {
     setError(null);
     try {
       const [s, u, g, m] = await Promise.all([
-        fetch(`${API}/api/admin/stats?userId=${user.id}`).then((r) => r.json()),
-        fetch(`${API}/api/admin/users?userId=${user.id}`).then((r) => r.json()),
-        fetch(`${API}/api/admin/groupchats?userId=${user.id}`).then((r) => r.json()),
-        fetch(`${API}/api/admin/messages?userId=${user.id}&limit=50`).then((r) => r.json()),
+        fetch(`/api/admin/stats?userId=${user.id}`).then((r) => r.json()),
+        fetch(`/api/admin/users?userId=${user.id}`).then((r) => r.json()),
+        fetch(`/api/admin/groupchats?userId=${user.id}`).then((r) => r.json()),
+        fetch(`/api/admin/messages?userId=${user.id}&limit=50`).then((r) => r.json()),
       ]);
       setStats(s);
       setUsers(u);
@@ -90,7 +88,7 @@ const Admin = () => {
   const toggleRole = async (targetId: number, currentRole: "user" | "admin") => {
     if (!user) return;
     const newRole = currentRole === "admin" ? "user" : "admin";
-    await fetch(`${API}/api/admin/users/${targetId}/role`, {
+    await fetch(`/api/admin/users/${targetId}/role`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: user.id, role: newRole }),

@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/carousel";
 import { UserPlus, Clock, MessageCircle, Star, Instagram, Twitter, Youtube } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { DEFAULT_REVIEWS, loadUserReviews, saveUserReviews, type Review } from "@/lib/reviews";
 
 const STEPS = [
@@ -75,7 +75,7 @@ const Index = () => {
     setReviewerName("");
     setReviewerLocation("");
     setStars(5);
-    toast({ title: "Thanks!", description: "Your review was added to the carousel." });
+    toast.success("Your review was added to the carousel.");
   };
 
   return (
@@ -104,7 +104,7 @@ const Index = () => {
           </Button>
           <Button
             className="rounded-full px-6 sm:px-8 h-11 sm:h-12 text-sm sm:text-base font-semibold"
-            onClick={() => navigate("/get-started")}
+            onClick={() => navigate("/get-started?mode=signup")}
           >
             Get Started
           </Button>
@@ -256,7 +256,7 @@ const Index = () => {
           <p className="text-xs sm:text-sm md:text-base text-muted-foreground mb-5 sm:mb-6">It takes less than 2 minutes to get started.</p>
           <Button
             className="rounded-full px-8 h-11 sm:h-12 text-sm sm:text-base font-semibold w-full sm:w-auto"
-            onClick={() => navigate("/get-started")}
+            onClick={() => navigate("/get-started?mode=signup")}
           >
             Get Started
           </Button>
@@ -271,9 +271,9 @@ const Index = () => {
               <span className="text-primary">H</span>uddle
             </span>
             <div className="flex gap-3 sm:gap-4 text-muted-foreground">
-              <Twitter className="w-4 h-4 cursor-pointer hover:text-foreground transition-colors" />
-              <Instagram className="w-4 h-4 cursor-pointer hover:text-foreground transition-colors" />
-              <Youtube className="w-4 h-4 cursor-pointer hover:text-foreground transition-colors" />
+              <button aria-label="Twitter"><Twitter className="w-4 h-4 cursor-pointer hover:text-foreground transition-colors" /></button>
+              <button aria-label="Instagram"><Instagram className="w-4 h-4 cursor-pointer hover:text-foreground transition-colors" /></button>
+              <button aria-label="YouTube"><Youtube className="w-4 h-4 cursor-pointer hover:text-foreground transition-colors" /></button>
             </div>
           </div>
           <div className="flex flex-wrap gap-4 sm:gap-6 text-xs sm:text-sm text-muted-foreground">

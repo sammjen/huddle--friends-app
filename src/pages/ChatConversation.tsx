@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useParams, Navigate } from "react-router-dom";
-import { ArrowLeft, Send, Pencil, X } from "lucide-react";
+import { ArrowLeft, Send, Pencil, X, MessageCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/components/AuthProvider";
+import { toast } from "sonner";
 
 interface Message {
   id: string;
@@ -23,6 +25,7 @@ const ChatConversation = () => {
   const [memberCount, setMemberCount] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [messagesLoading, setMessagesLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -43,7 +46,7 @@ const ChatConversation = () => {
           setMemberCount(group.member_count);
         }
       })
-      .catch(console.error);
+      .catch(() => toast.error("Couldn't load group info."));
 
     // Fetch messages
     fetch(`/api/messages/${groupId}`)
@@ -60,7 +63,8 @@ const ChatConversation = () => {
           }))
         );
       })
-      .catch(console.error);
+      .catch(() => toast.error("Couldn't load messages."))
+      .finally(() => setMessagesLoading(false));
   }, [groupId, user?.id]);
 
   useEffect(() => {
@@ -98,8 +102,8 @@ const ChatConversation = () => {
           prev.map((m) => (m.id === optimisticId ? { ...m, id: String(saved.id) } : m))
         );
       }
-    } catch (err) {
-      console.error("Failed to send message:", err);
+    } catch {
+      toast.error("Failed to send message.");
     }
 
     setTimeout(() => inputRef.current?.focus(), 10);
@@ -134,8 +138,8 @@ const ChatConversation = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user?.id, message: text }),
       });
-    } catch (err) {
-      console.error("Failed to edit message:", err);
+    } catch {
+      toast.error("Failed to edit message.");
     }
   };
 
@@ -166,6 +170,27 @@ const ChatConversation = () => {
         className="flex-1 overflow-y-auto px-3 sm:px-4 md:px-6 py-3 sm:py-4 space-y-1 overscroll-contain"
         onClick={() => setSelectedId(null)}
       >
+        {messagesLoading && (
+          <div className="space-y-3 py-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className={`flex ${i % 2 === 0 ? "justify-end" : "justify-start"}`}>
+                <div className="space-y-1.5">
+                  {i % 2 !== 0 && <Skeleton className="h-3 w-16 ml-1" />}
+                  <Skeleton className={`h-10 rounded-2xl ${i % 2 === 0 ? "w-48 rounded-br-sm" : "w-56 rounded-bl-sm"}`} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {!messagesLoading && messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+              <MessageCircle className="w-7 h-7 text-primary" />
+            </div>
+            <p className="text-sm font-medium text-foreground mb-1">No messages yet</p>
+            <p className="text-xs text-muted-foreground">Be the first to say something!</p>
+          </div>
+        )}
         {messages.map((msg, i) => {
           const showSender = shouldShowSender(i);
           const isSelected = selectedId === msg.id;

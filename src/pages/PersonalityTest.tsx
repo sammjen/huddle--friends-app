@@ -249,7 +249,7 @@ const PersonalityTest = () => {
           <span className="text-xs text-muted-foreground">Step 2 of 2</span>
           <span className="text-xs text-primary font-medium">Personality Quiz</span>
         </div>
-        <Progress value={100} className="h-1.5" />
+        <Progress value={questionProgress} className="h-1.5" />
       </div>
 
       <div className="px-4 sm:px-6 pt-3 sm:pt-4">
