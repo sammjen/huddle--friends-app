@@ -33,6 +33,24 @@ for (const sql of migrations) {
   try { db.exec(sql); } catch (_) { /* column already exists */ }
 }
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    event_date TEXT NOT NULL,
+    location TEXT NOT NULL,
+    description TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS event_rsvps (
+    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (event_id, user_id)
+  );
+`);
+
 // Ensure default admin user exists
 const adminExists = db.prepare("SELECT id FROM user WHERE username = 'admin'").get();
 if (!adminExists) {
@@ -48,11 +66,51 @@ if (!adminExists) {
 
 // Admin middleware — expects ?userId=<id> on GET or { userId } in body
 const requireAdmin = (req, res, next) => {
-  const userId = req.query.userId || req.body?.userId;
-  if (!userId) return res.status(401).json({ error: "Authentication required." });
+  const userId = Number(req.query.userId || req.body?.userId);
+  if (!Number.isInteger(userId)) return res.status(401).json({ error: "Authentication required." });
   const user = db.prepare("SELECT role FROM user WHERE id = ?").get(userId);
   if (!user || user.role !== "admin") return res.status(403).json({ error: "Admin access required." });
+  req.currentUser = { id: userId, role: user.role };
   next();
+};
+
+const requireAuth = (req, res, next) => {
+  const userId = Number(req.query.userId || req.body?.userId);
+  if (!Number.isInteger(userId)) {
+    return res.status(401).json({ error: "Authentication required." });
+  }
+
+  const user = db.prepare("SELECT id, role FROM user WHERE id = ?").get(userId);
+  if (!user) {
+    return res.status(401).json({ error: "Authentication required." });
+  }
+
+  req.currentUser = user;
+  next();
+};
+
+const seedEvent = db.prepare(`
+  INSERT OR IGNORE INTO events (id, name, event_date, location, description)
+  VALUES (?, ?, ?, ?, ?)
+`);
+
+[
+  [1, "Coffee Catch-Up", "2026-03-27 10:00:00", "Denver Central Market", "Easy morning meetup for coffee and conversation."],
+  [2, "Trivia Night", "2026-03-29 19:00:00", "The Post Chicken & Beer", "Low-pressure team trivia and food."],
+  [3, "City Park Walk", "2026-03-30 18:30:00", "City Park", "Sunset walk and hangout outdoors."],
+].forEach((event) => seedEvent.run(...event));
+
+const isValidEventDate = (value) => {
+  const trimmed = String(value || "").trim();
+  const matches = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
+  if (!matches) return false;
+
+  const year = Number(matches[1]);
+  if (year < 2000 || year >= 2100) return false;
+
+  const normalized = trimmed.replace(" ", "T");
+  const date = new Date(normalized);
+  return !Number.isNaN(date.getTime());
 };
 
 // Ensure normalized hobby tables exist (idempotent)
@@ -309,6 +367,172 @@ app.post("/api/hobby-answers", (req, res) => {
     console.error(err);
     const message = err instanceof Error ? err.message : "Failed to save answers.";
     res.status(400).json({ error: message });
+  }
+});
+
+// GET /api/events - Get upcoming events with RSVP state for the current user
+app.get("/api/events", requireAuth, (req, res) => {
+  try {
+    const currentUserId = req.currentUser.id;
+    const events = db
+      .prepare(`
+        SELECT
+          e.id,
+          e.name,
+          e.event_date,
+          e.location,
+          e.description,
+          e.created_at,
+          EXISTS(
+            SELECT 1
+            FROM event_rsvps er
+            WHERE er.event_id = e.id AND er.user_id = ?
+          ) AS isRsvped
+        FROM events e
+        ORDER BY datetime(e.event_date) ASC, e.id ASC
+      `)
+      .all(currentUserId)
+      .map((event) => ({ ...event, isRsvped: Boolean(event.isRsvped) }));
+
+    res.json(events);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch events." });
+  }
+});
+
+// POST /api/events - Create an event
+app.post("/api/events", requireAdmin, (req, res) => {
+  try {
+    const name = String(req.body?.name || "").trim();
+    const eventDate = String(req.body?.event_date || "").trim();
+    const location = String(req.body?.location || "").trim();
+
+    if (!name || !eventDate || !location) {
+      return res.status(400).json({ error: "name, event_date, and location are required." });
+    }
+
+     if (!isValidEventDate(eventDate)) {
+      return res.status(400).json({ error: "Event date must use a 4-digit year between 2000 and 2099." });
+    }
+
+    const result = db
+      .prepare(`
+        INSERT INTO events (name, event_date, location)
+        VALUES (?, ?, ?)
+      `)
+      .run(name, eventDate, location);
+
+    const event = db
+      .prepare(`
+        SELECT id, name, event_date, location, description, created_at
+        FROM events
+        WHERE id = ?
+      `)
+      .get(result.lastInsertRowid);
+
+    res.status(201).json({ ...event, isRsvped: false });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to create event." });
+  }
+});
+
+// PUT /api/events/:id - Update an event
+app.put("/api/events/:id", requireAdmin, (req, res) => {
+  try {
+    const eventId = Number(req.params.id);
+    const name = String(req.body?.name || "").trim();
+    const eventDate = String(req.body?.event_date || "").trim();
+    const location = String(req.body?.location || "").trim();
+
+    if (!Number.isInteger(eventId)) {
+      return res.status(400).json({ error: "Invalid event id." });
+    }
+
+    if (!name || !eventDate || !location) {
+      return res.status(400).json({ error: "name, event_date, and location are required." });
+    }
+
+    if (!isValidEventDate(eventDate)) {
+      return res.status(400).json({ error: "Event date must use a 4-digit year between 2000 and 2099." });
+    }
+
+    const existingEvent = db.prepare("SELECT id FROM events WHERE id = ?").get(eventId);
+    if (!existingEvent) return res.status(404).json({ error: "Event not found." });
+
+    db.prepare(`
+      UPDATE events
+      SET name = ?, event_date = ?, location = ?
+      WHERE id = ?
+    `).run(name, eventDate, location, eventId);
+
+    const event = db
+      .prepare(`
+        SELECT id, name, event_date, location, description, created_at
+        FROM events
+        WHERE id = ?
+      `)
+      .get(eventId);
+
+    const isRsvped = Boolean(
+      db.prepare("SELECT 1 FROM event_rsvps WHERE event_id = ? AND user_id = ?").get(eventId, req.currentUser.id)
+    );
+
+    res.json({ ...event, isRsvped });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update event." });
+  }
+});
+
+// DELETE /api/events/:id - Delete an event
+app.delete("/api/events/:id", requireAdmin, (req, res) => {
+  try {
+    const eventId = Number(req.params.id);
+
+    if (!Number.isInteger(eventId)) {
+      return res.status(400).json({ error: "Invalid event id." });
+    }
+
+    const existingEvent = db.prepare("SELECT id FROM events WHERE id = ?").get(eventId);
+    if (!existingEvent) return res.status(404).json({ error: "Event not found." });
+
+    db.prepare("DELETE FROM events WHERE id = ?").run(eventId);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete event." });
+  }
+});
+
+// POST /api/events/:id/rsvp - Toggle RSVP for the current user
+app.post("/api/events/:id/rsvp", requireAuth, (req, res) => {
+  try {
+    const currentUserId = req.currentUser.id;
+    const eventId = Number(req.params.id);
+
+    if (!Number.isInteger(eventId)) {
+      return res.status(400).json({ error: "Invalid event id." });
+    }
+
+    const existingEvent = db.prepare("SELECT id FROM events WHERE id = ?").get(eventId);
+    if (!existingEvent) return res.status(404).json({ error: "Event not found." });
+
+    const existingRsvp = db
+      .prepare("SELECT event_id FROM event_rsvps WHERE event_id = ? AND user_id = ?")
+      .get(eventId, currentUserId);
+
+    if (existingRsvp) {
+      db.prepare("DELETE FROM event_rsvps WHERE event_id = ? AND user_id = ?").run(eventId, currentUserId);
+      return res.json({ success: true, isRsvped: false });
+    }
+
+    db.prepare("INSERT INTO event_rsvps (event_id, user_id) VALUES (?, ?)").run(eventId, currentUserId);
+    res.json({ success: true, isRsvped: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to toggle RSVP." });
   }
 });
 

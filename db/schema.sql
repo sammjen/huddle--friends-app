@@ -104,3 +104,21 @@ CREATE TABLE IF NOT EXISTS user_hobby_answers (
 -- Helpful index for matching users by question/answer
 CREATE INDEX IF NOT EXISTS idx_user_hobby_answers_question_answer
   ON user_hobby_answers (question_id, answer);
+
+-- Events
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  event_date TEXT NOT NULL,
+  location TEXT NOT NULL,
+  description TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Event RSVPs
+CREATE TABLE IF NOT EXISTS event_rsvps (
+  event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (event_id, user_id)
+);

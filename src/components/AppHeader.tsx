@@ -8,6 +8,7 @@ import { useAuth } from "@/components/AuthProvider";
 const NAV_ITEMS = [
   { label: "Home", path: "/" },
   { label: "Chats", path: "/chats" },
+  { label: "Events", path: "/events" },
 ];
 
 const AppHeader = () => {

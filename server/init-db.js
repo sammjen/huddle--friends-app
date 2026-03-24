@@ -25,6 +25,24 @@ for (const sql of migrations) {
   try { db.exec(sql); } catch (_) { /* column already exists */ }
 }
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    event_date TEXT NOT NULL,
+    location TEXT NOT NULL,
+    description TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS event_rsvps (
+    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (event_id, user_id)
+  );
+`);
+
 db.exec(readFileSync(seedPath, "utf-8"));
 console.log("Seed data inserted.");
 
