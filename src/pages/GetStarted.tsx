@@ -65,13 +65,14 @@ const GetStarted = () => {
     const displayName = `${firstName.trim()} ${lastName.trim()}`.trim();
 
     try {
-      const res = await fetch("/api/users", {
+      const res = await fetch("/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           username: username.trim(),
+          password: password.trim(),
           city: city.trim(),
-          displayName,
+          display_name: displayName,
         }),
       });
       const data = await res.json();
@@ -84,7 +85,7 @@ const GetStarted = () => {
         username: data.username,
         displayName: data.display_name || displayName || data.username,
         city: data.city || city.trim(),
-        role: "user",
+        role: data.role || "user",
       });
       navigate("/personality-test");
     } catch {
