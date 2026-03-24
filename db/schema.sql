@@ -80,3 +80,27 @@ CREATE TABLE IF NOT EXISTS personalityquestion (
   answer_num INTEGER NOT NULL,
   answer_string TEXT
 );
+
+-- Normalized hobby & interest survey (replaces JSON storage)
+PRAGMA foreign_keys = ON;
+
+-- Questions catalog (10 seeded in seed.sql)
+CREATE TABLE IF NOT EXISTS questions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  question_text TEXT NOT NULL,
+  question_number INTEGER NOT NULL UNIQUE
+);
+
+-- Per-user answers for each question
+CREATE TABLE IF NOT EXISTS user_hobby_answers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+  answer CHAR(1) NOT NULL CHECK (answer IN ('A','B','C','D','E')),
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, question_id)
+);
+
+-- Helpful index for matching users by question/answer
+CREATE INDEX IF NOT EXISTS idx_user_hobby_answers_question_answer
+  ON user_hobby_answers (question_id, answer);

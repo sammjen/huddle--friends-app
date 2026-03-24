@@ -65,17 +65,27 @@ const GetStarted = () => {
     const displayName = `${firstName.trim()} ${lastName.trim()}`.trim();
 
     try {
-      const res = await fetch("/api/register", {
+      const res = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: username.trim(), password: password.trim(), city: city.trim(), display_name: displayName }),
+        body: JSON.stringify({
+          username: username.trim(),
+          city: city.trim(),
+          displayName,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Something went wrong.");
         return;
       }
-      login({ id: data.id, username: data.username, displayName: data.display_name || displayName, role: data.role || "user" });
+      login({
+        id: data.id,
+        username: data.username,
+        displayName: data.display_name || displayName || data.username,
+        city: data.city || city.trim(),
+        role: "user",
+      });
       navigate("/personality-test");
     } catch {
       setError("Could not connect to server. Make sure the backend is running.");

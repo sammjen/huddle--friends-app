@@ -14,6 +14,7 @@ const PORT = process.env.PORT || 3001;
 // SQLite database
 const dbPath = join(__dirname, "..", "db", "app.db");
 const db = new Database(dbPath);
+db.pragma("foreign_keys = ON");
 
 app.use(cors());
 app.use(express.json());
@@ -31,7 +32,52 @@ for (const sql of migrations) {
   try { db.exec(sql); } catch (_) { /* column already exists */ }
 }
 
-// Question texts (match templatePersonalityQuestion order)
+// Ensure normalized hobby tables exist (idempotent)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS questions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    question_text TEXT NOT NULL,
+    question_number INTEGER NOT NULL UNIQUE
+  );
+
+  CREATE TABLE IF NOT EXISTS user_hobby_answers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    answer CHAR(1) NOT NULL CHECK (answer IN ('A','B','C','D','E')),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (user_id, question_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_user_hobby_answers_question_answer
+    ON user_hobby_answers (question_id, answer);
+`);
+
+// Hobby & interest question catalog
+const HOBBY_QUESTIONS = [
+  { number: 1, text: "What do you enjoy doing in your free time for creative expression?" },
+  { number: 2, text: "Which type of physical activity appeals to you most?" },
+  { number: 3, text: "How do you prefer to spend your entertainment time?" },
+  { number: 4, text: "What's your ideal way to socialize?" },
+  { number: 5, text: "What's your relationship with food and cooking?" },
+  { number: 6, text: "What sparks your intellectual curiosity?" },
+  { number: 7, text: "Do you enjoy collecting or focusing deeply on specific interests?" },
+  { number: 8, text: "What's your connection to music and performance?" },
+  { number: 9, text: "How do you spend time online?" },
+  { number: 10, text: "How do you prioritize your wellness and relaxation?" },
+];
+
+// Seed questions on boot (upsert by question_number)
+const upsertQuestion = db.prepare(
+  `INSERT INTO questions (question_text, question_number)
+   VALUES (@text, @number)
+   ON CONFLICT(question_number) DO UPDATE SET question_text=excluded.question_text`
+);
+for (const q of HOBBY_QUESTIONS) {
+  upsertQuestion.run(q);
+}
+
+// Legacy question texts (kept for existing personality endpoints)
 const PERSONALITY_QUESTIONS = [
   "How often do you go out of your way to talk to new people at a group event?",
   "How many nights a week do you spend out with friends?",
@@ -114,6 +160,49 @@ app.get("/api/profile/:userId/personality-results", (req, res) => {
   }
 });
 
+// POST /api/users - create or fetch a user by username (no password for lightweight flow)
+app.post("/api/users", (req, res) => {
+  try {
+    const { username, city, displayName } = req.body;
+    if (!username) return res.status(400).json({ error: "Username is required." });
+
+    const existing = db.prepare("SELECT id, username, city, display_name FROM user WHERE username = ?").get(username);
+    if (existing) {
+      return res.json({
+        id: existing.id,
+        username: existing.username,
+        city: existing.city,
+        display_name: existing.display_name || existing.username,
+      });
+    }
+
+    // minimal bcrypt password hash for compatibility with login flow ("placeholder-password")
+    const placeholderPassword = "$2b$10$eImiTXuWVxfM37uY4JANjQy5lr8G9V7HUlBN3JcH3Y0IGY6Yyv7i.";
+    const result = db
+      .prepare("INSERT INTO user (username, password, city, display_name) VALUES (?, ?, ?, ?)")
+      .run(username, placeholderPassword, city || null, displayName || username);
+
+    const newUserId = result.lastInsertRowid;
+
+    // Add new user to all active groupchats for onboarding
+    const groupchats = db.prepare("SELECT id FROM groupchat WHERE active = 1").all();
+    const insertMembership = db.prepare(
+      "INSERT OR IGNORE INTO user_groupchat (user_id, groupchat_id) VALUES (?, ?)"
+    );
+    for (const gc of groupchats) insertMembership.run(newUserId, gc.id);
+
+    res.status(201).json({
+      id: newUserId,
+      username,
+      city: city || null,
+      display_name: displayName || username,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to create user." });
+  }
+});
+
 // POST /api/register - Create a new user
 app.post("/api/register", async (req, res) => {
   try {
@@ -156,6 +245,47 @@ app.post("/api/login", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to login." });
+  }
+});
+
+// POST /api/hobby-answers - upsert per-question answers for a user
+app.post("/api/hobby-answers", (req, res) => {
+  try {
+    const { userId, answers } = req.body;
+    if (!userId || !Array.isArray(answers)) {
+      return res.status(400).json({ error: "userId and answers are required." });
+    }
+
+    const user = db.prepare("SELECT id FROM user WHERE id = ?").get(userId);
+    if (!user) return res.status(404).json({ error: "User not found." });
+
+    const stmtQuestion = db.prepare("SELECT id FROM questions WHERE question_number = ?");
+    const upsertAnswer = db.prepare(`
+      INSERT INTO user_hobby_answers (user_id, question_id, answer)
+      VALUES (?, ?, ?)
+      ON CONFLICT(user_id, question_id) DO UPDATE SET
+        answer = excluded.answer,
+        created_at = CURRENT_TIMESTAMP
+    `);
+
+    const txn = db.transaction(() => {
+      for (const entry of answers) {
+        const { questionNumber, answer } = entry || {};
+        if (!questionNumber || !["A", "B", "C", "D", "E"].includes(answer)) {
+          throw new Error("Invalid answer payload.");
+        }
+        const q = stmtQuestion.get(questionNumber);
+        if (!q) throw new Error(`Question ${questionNumber} not found.`);
+        upsertAnswer.run(userId, q.id, answer);
+      }
+    });
+
+    txn();
+    res.status(200).json({ success: true });
+  } catch (err) {
+    console.error(err);
+    const message = err instanceof Error ? err.message : "Failed to save answers.";
+    res.status(400).json({ error: message });
   }
 });
 

@@ -24,17 +24,17 @@ const AppHeader = () => {
     .toUpperCase();
 
   return (
-    <header className="sticky top-0 z-50 flex items-center justify-between px-4 md:px-8 py-3 bg-background/80 backdrop-blur-sm border-b border-border">
+    <header className="sticky top-0 z-50 grid grid-cols-[1fr_auto_1fr] items-center px-4 md:px-8 py-3 bg-background/80 backdrop-blur-sm border-b border-border">
       {/* Logo */}
       <button
         onClick={() => navigate("/")}
-        className="text-xl font-bold tracking-tight text-foreground min-h-[44px] flex items-center"
+        className="justify-self-start text-xl font-bold tracking-tight text-foreground min-h-[44px] flex items-center"
       >
         <span className="text-primary">H</span>uddle
       </button>
 
-      {/* Desktop Nav */}
-      <nav className="hidden md:flex items-center gap-1">
+      {/* Desktop Nav (centered) */}
+      <nav className="hidden md:flex items-center gap-1 justify-center">
         {NAV_ITEMS.map((item) => (
           <button
             key={item.path}
@@ -50,7 +50,7 @@ const AppHeader = () => {
         ))}
       </nav>
 
-      <div className="flex items-center gap-2">
+      <div className="justify-self-end flex items-center gap-2">
         {/* Theme Toggle */}
         <button
           onClick={toggleTheme}

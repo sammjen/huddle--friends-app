@@ -1,9 +1,10 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 
 interface User {
   id: number;
   username: string;
   displayName: string;
+  city?: string | null;
   role: "user" | "admin";
 }
 
@@ -23,15 +24,16 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(() => {
     const stored = localStorage.getItem("huddle-user");
     return stored ? JSON.parse(stored) : null;
   });
 
   const login = (userData: User) => {
-    setUser(userData);
-    localStorage.setItem("huddle-user", JSON.stringify(userData));
+    const payload = { ...userData };
+    setUser(payload);
+    localStorage.setItem("huddle-user", JSON.stringify(payload));
   };
 
   const logout = () => {
