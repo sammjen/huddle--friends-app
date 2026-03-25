@@ -62,7 +62,7 @@ const Index = () => {
     }
     setFormError(null);
     const newReview: Review = {
-      id: crypto.randomUUID(),
+      id: (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
       quote: q,
       name: n.slice(0, 80),
       location: loc.slice(0, 80),
