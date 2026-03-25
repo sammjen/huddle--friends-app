@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "init-db": "node init-db.js"
+    "init-db": "node init-db.js",
+    "seed-demo": "node seed-demo.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

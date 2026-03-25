@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, MessageCircle, LogIn, UserPlus } from "lucide-react";
+import { Users, MessageCircle, LogIn, UserPlus, Shuffle } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -18,31 +18,32 @@ interface Group {
   last_message: string | null;
 }
 
-const getTimeUntilMidnightUTC = () => {
-  const now = new Date();
-  const nextMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
-  const diff = Math.max(0, Math.floor((nextMidnight.getTime() - now.getTime()) / 1000));
-  return { h: Math.floor(diff / 3600), m: Math.floor((diff % 3600) / 60), s: diff % 60 };
+/* Cycle length in seconds — keep short for demos */
+const DEMO_CYCLE_SECONDS = 120;
+
+const initCountdown = (): number => {
+  const stored = localStorage.getItem("huddle-next-shuffle");
+  if (stored) {
+    const remaining = Math.max(0, Math.floor((Number(stored) - Date.now()) / 1000));
+    if (remaining > 0) return remaining;
+  }
+  const next = Date.now() + DEMO_CYCLE_SECONDS * 1000;
+  localStorage.setItem("huddle-next-shuffle", String(next));
+  return DEMO_CYCLE_SECONDS;
 };
 
-const CountdownTimer = () => {
-  const [time, setTime] = useState(getTimeUntilMidnightUTC);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTime(getTimeUntilMidnightUTC());
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
+const CountdownTimer = ({ seconds }: { seconds: number }) => {
   const pad = (n: number) => String(n).padStart(2, "0");
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
 
   return (
     <div className="flex gap-2 sm:gap-3 justify-center">
       {[
-        { value: pad(time.h), label: "Hours" },
-        { value: pad(time.m), label: "Min" },
-        { value: pad(time.s), label: "Sec" },
+        { value: pad(h), label: "Hours" },
+        { value: pad(m), label: "Min" },
+        { value: pad(s), label: "Sec" },
       ].map((unit, i) => (
         <div key={unit.label} className="flex items-center gap-2 sm:gap-3">
           <div className="text-center">
@@ -61,16 +62,77 @@ const ChatList = () => {
   const { isAuthenticated, user } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
+  const [shuffling, setShuffling] = useState(false);
+  const [countdown, setCountdown] = useState(initCountdown);
 
+  const shufflingRef = useRef(false);
+  const hasAutoMatched = useRef(false);
+
+  const fetchGroups = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res = await fetch(apiUrl(`/api/groups/${user.id}`));
+      const data = await res.json();
+      setGroups(Array.isArray(data) ? data : []);
+    } catch {
+      /* silent */
+    }
+  }, [user]);
+
+  const runMatch = useCallback(async () => {
+    if (shufflingRef.current) return;
+    shufflingRef.current = true;
+    setShuffling(true);
+    try {
+      const res = await fetch(apiUrl("/api/match"), { method: "POST" });
+      if (!res.ok) throw new Error();
+      // Reset timer
+      const next = Date.now() + DEMO_CYCLE_SECONDS * 1000;
+      localStorage.setItem("huddle-next-shuffle", String(next));
+      setCountdown(DEMO_CYCLE_SECONDS);
+      await fetchGroups();
+      toast.success("Groups shuffled! Meet your new crew.");
+    } catch {
+      toast.error("Failed to shuffle groups.");
+    } finally {
+      shufflingRef.current = false;
+      setShuffling(false);
+    }
+  }, [fetchGroups]);
+
+  // Stable ref so the interval never re-creates
+  const matchRef = useRef(runMatch);
+  matchRef.current = runMatch;
+
+  // Initial group fetch
   useEffect(() => {
     if (!isAuthenticated || !user) return;
     setLoading(true);
-    fetch(apiUrl(`/api/groups/${user.id}`))
-      .then((res) => res.json())
-      .then((data) => setGroups(Array.isArray(data) ? data : []))
-      .catch(() => toast.error("Couldn't load groups."))
-      .finally(() => setLoading(false));
-  }, [isAuthenticated, user]);
+    fetchGroups().finally(() => setLoading(false));
+  }, [isAuthenticated, user, fetchGroups]);
+
+  // Auto-match if user has no groups on first load
+  useEffect(() => {
+    if (!loading && groups.length === 0 && isAuthenticated && user && !hasAutoMatched.current) {
+      hasAutoMatched.current = true;
+      matchRef.current();
+    }
+  }, [loading, groups.length, isAuthenticated, user]);
+
+  // Tick-down timer — fire match when it reaches 0
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const interval = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          matchRef.current();
+          return DEMO_CYCLE_SECONDS;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -114,9 +176,23 @@ const ChatList = () => {
             <div className="bg-secondary rounded-2xl p-4 sm:p-6 text-center relative overflow-hidden">
               <div className="absolute inset-0 bg-primary/5 rounded-2xl" />
               <div className="relative">
-                <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-widest mb-3">Next Introduction In</p>
-                <CountdownTimer />
-                <p className="text-xs sm:text-sm text-muted-foreground mt-3 sm:mt-4">New friends drop every 24 hours</p>
+                <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-widest mb-3">
+                  Next Group Shuffle In
+                </p>
+                <CountdownTimer seconds={countdown} />
+                <p className="text-xs sm:text-sm text-muted-foreground mt-3 sm:mt-4">
+                  New personality-matched groups every cycle
+                </p>
+                <Button
+                  onClick={() => matchRef.current()}
+                  disabled={shuffling}
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 gap-1.5 rounded-full"
+                >
+                  <Shuffle className={`w-3.5 h-3.5 ${shuffling ? "animate-spin" : ""}`} />
+                  {shuffling ? "Shuffling…" : "Shuffle Now"}
+                </Button>
               </div>
             </div>
           </div>
@@ -128,7 +204,7 @@ const ChatList = () => {
               Your Groups
             </h2>
 
-            {loading ? (
+            {loading || shuffling ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="bg-card rounded-2xl p-3 sm:p-4 shadow-sm">
@@ -143,7 +219,9 @@ const ChatList = () => {
                 ))}
               </div>
             ) : groups.length === 0 ? (
-              <p className="text-sm text-muted-foreground">You're not in any groups yet. Check back after the next introduction!</p>
+              <p className="text-sm text-muted-foreground">
+                You're not in any groups yet. Take the personality quiz or wait for the next shuffle!
+              </p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3">
                 {groups.map((group) => (
@@ -161,7 +239,10 @@ const ChatList = () => {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-0.5">
                           <h3 className="font-semibold text-sm text-foreground">{group.name}</h3>
-                          <Badge variant="secondary" className="text-[10px] bg-secondary border-0 px-2 py-0 text-muted-foreground flex-shrink-0 ml-1">
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] bg-secondary border-0 px-2 py-0 text-muted-foreground flex-shrink-0 ml-1"
+                          >
                             {group.member_count} members
                           </Badge>
                         </div>

@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "server": "cd server && npm run start",
     "server:init": "cd server && npm run init-db",
-    "server:setup": "cd server && npm i && npm run init-db"
+    "server:setup": "cd server && npm i && npm run init-db",
+    "server:seed-demo": "cd server && npm run seed-demo"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

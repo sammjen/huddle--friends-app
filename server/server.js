@@ -132,6 +132,13 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_user_hobby_answers_question_answer
     ON user_hobby_answers (question_id, answer);
+
+  CREATE TABLE IF NOT EXISTS user_friends (
+    user_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    friend_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, friend_id)
+  );
 `);
 
 // Hobby & interest question catalog
@@ -553,6 +560,79 @@ app.get("/api/groupchats/:id", (req, res) => {
   }
 });
 
+// GET /api/groupchats/:id/members - Members of a groupchat with friend status
+app.get("/api/groupchats/:id/members", requireAuth, (req, res) => {
+  try {
+    const groupId = Number(req.params.id);
+    const currentUserId = req.currentUser.id;
+    const members = db
+      .prepare(`
+        SELECT u.id, u.username, u.display_name, u.city, u.profile_photo,
+          EXISTS(
+            SELECT 1 FROM user_friends WHERE user_id = ? AND friend_id = u.id
+          ) AS is_friend
+        FROM user u
+        JOIN user_groupchat ug ON u.id = ug.user_id
+        WHERE ug.groupchat_id = ?
+        ORDER BY u.display_name ASC
+      `)
+      .all(currentUserId, groupId)
+      .map((m) => ({ ...m, is_friend: Boolean(m.is_friend) }));
+    res.json(members);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch members." });
+  }
+});
+
+// POST /api/friends - Add a friend
+app.post("/api/friends", requireAuth, (req, res) => {
+  try {
+    const userId = req.currentUser.id;
+    const { friendId } = req.body;
+    if (!friendId || userId === friendId) return res.status(400).json({ error: "Invalid friend id." });
+    db.prepare("INSERT OR IGNORE INTO user_friends (user_id, friend_id) VALUES (?, ?)").run(userId, friendId);
+    res.json({ success: true, is_friend: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to add friend." });
+  }
+});
+
+// DELETE /api/friends - Remove a friend
+app.delete("/api/friends", requireAuth, (req, res) => {
+  try {
+    const userId = req.currentUser.id;
+    const friendId = Number(req.query.friendId);
+    if (!friendId) return res.status(400).json({ error: "friendId required." });
+    db.prepare("DELETE FROM user_friends WHERE user_id = ? AND friend_id = ?").run(userId, friendId);
+    res.json({ success: true, is_friend: false });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to remove friend." });
+  }
+});
+
+// GET /api/friends/:userId - List friends
+app.get("/api/friends/:userId", requireAuth, (req, res) => {
+  try {
+    const userId = Number(req.params.userId);
+    const friends = db
+      .prepare(`
+        SELECT u.id, u.username, u.display_name, u.city, u.profile_photo
+        FROM user_friends uf
+        JOIN user u ON uf.friend_id = u.id
+        WHERE uf.user_id = ?
+        ORDER BY u.display_name ASC
+      `)
+      .all(userId);
+    res.json(friends);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch friends." });
+  }
+});
+
 // GET /api/groups/:userId - Get all group chats for a user
 app.get("/api/groups/:userId", (req, res) => {
   try {
@@ -819,6 +899,140 @@ app.get("/api/admin/messages", requireAdmin, (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch messages." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/match — personality-based matching algorithm
+// ---------------------------------------------------------------------------
+app.post("/api/match", (req, res) => {
+  try {
+    const GROUP_SIZE = 5;
+
+    // 1. Users who completed the full 10-question quiz
+    const completedUsers = db
+      .prepare("SELECT user_id FROM user_hobby_answers GROUP BY user_id HAVING COUNT(*) = 10")
+      .all()
+      .map((r) => r.user_id);
+
+    if (completedUsers.length < 2) {
+      return res.status(400).json({ error: "Not enough users with completed quizzes." });
+    }
+
+    // 2. Build answer vectors  userId → [A–E × 10]
+    const userAnswers = {};
+    const stmtAnswers = db.prepare(`
+      SELECT q.question_number, uha.answer
+      FROM user_hobby_answers uha
+      JOIN questions q ON uha.question_id = q.id
+      WHERE uha.user_id = ?
+      ORDER BY q.question_number
+    `);
+    for (const uid of completedUsers) {
+      userAnswers[uid] = stmtAnswers.all(uid).map((a) => a.answer);
+    }
+
+    // 3. Greedy similarity clustering
+    const ungrouped = new Set(completedUsers);
+    const groups = [];
+
+    // Shuffle for variety across runs
+    const shuffled = [...ungrouped].sort(() => Math.random() - 0.5);
+
+    while (shuffled.filter((u) => ungrouped.has(u)).length >= GROUP_SIZE) {
+      const pivot = shuffled.find((u) => ungrouped.has(u));
+      if (pivot === undefined) break;
+
+      const scored = [...ungrouped]
+        .filter((u) => u !== pivot)
+        .map((uid) => ({
+          uid,
+          score: userAnswers[pivot].reduce(
+            (sum, ans, i) => sum + (ans === userAnswers[uid][i] ? 1 : 0),
+            0
+          ),
+        }))
+        .sort((a, b) => b.score - a.score);
+
+      const members = [pivot, ...scored.slice(0, GROUP_SIZE - 1).map((s) => s.uid)];
+      groups.push(members);
+      members.forEach((u) => ungrouped.delete(u));
+    }
+
+    // Distribute leftovers into closest group
+    for (const uid of ungrouped) {
+      let best = 0;
+      let bestScore = -1;
+      for (let g = 0; g < groups.length; g++) {
+        const avg =
+          groups[g].reduce(
+            (s, m) =>
+              s + userAnswers[uid].reduce((t, a, i) => t + (a === userAnswers[m][i] ? 1 : 0), 0),
+            0
+          ) / groups[g].length;
+        if (avg > bestScore) {
+          bestScore = avg;
+          best = g;
+        }
+      }
+      groups[best].push(uid);
+    }
+
+    // 4. Derive group name from dominant answers on Q1 (creative) & Q3 (entertainment)
+    const ADJ = { A: "Artsy", B: "Literary", C: "Musical", D: "Maker", E: "Creative" };
+    const NOUN = { A: "Gamers", B: "Film Buffs", C: "Bookworms", D: "Podcasters", E: "Explorers" };
+    const EMOJI = { A: "🎨", B: "✍️", C: "🎵", D: "🔧", E: "✨" };
+
+    function nameForGroup(memberIds) {
+      const q1 = {}, q3 = {};
+      for (const uid of memberIds) {
+        const a = userAnswers[uid];
+        q1[a[0]] = (q1[a[0]] || 0) + 1;
+        q3[a[2]] = (q3[a[2]] || 0) + 1;
+      }
+      const topQ1 = Object.entries(q1).sort((a, b) => b[1] - a[1])[0][0];
+      const topQ3 = Object.entries(q3).sort((a, b) => b[1] - a[1])[0][0];
+      return { name: `${ADJ[topQ1]} ${NOUN[topQ3]}`, emoji: EMOJI[topQ1] };
+    }
+
+    // 5. Persist: deactivate old matched groups, create new ones
+    const result = db.transaction(() => {
+      // Deactivate all current active groups EXCEPT "The Boys" (permanent demo chat)
+      db.prepare("UPDATE groupchat SET active = 0 WHERE active = 1 AND name != 'The Boys'").run();
+
+      const insGroup = db.prepare("INSERT INTO groupchat (name, chat_photo, active) VALUES (?, ?, 1)");
+      const insMember = db.prepare("INSERT OR IGNORE INTO user_groupchat (user_id, groupchat_id) VALUES (?, ?)");
+
+      // Ensure all matched users are also in "The Boys"
+      const theBoys = db.prepare("SELECT id FROM groupchat WHERE name = 'The Boys'").get();
+      if (theBoys) {
+        for (const members of groups) {
+          for (const uid of members) insMember.run(uid, theBoys.id);
+        }
+      }
+
+      const created = [];
+      const usedNames = new Set();
+
+      for (const members of groups) {
+        let { name, emoji } = nameForGroup(members);
+        let unique = name;
+        let n = 2;
+        while (usedNames.has(unique)) { unique = `${name} ${n++}`; }
+        usedNames.add(unique);
+
+        const r = insGroup.run(unique, emoji);
+        const gid = Number(r.lastInsertRowid);
+        for (const uid of members) insMember.run(uid, gid);
+        created.push({ id: gid, name: unique, emoji, memberCount: members.length });
+      }
+      return created;
+    })();
+
+    res.json({ success: true, groups: result, totalUsers: completedUsers.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to run matching." });
   }
 });
 

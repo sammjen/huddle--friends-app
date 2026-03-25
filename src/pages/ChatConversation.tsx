@@ -1,8 +1,16 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useParams, Navigate } from "react-router-dom";
-import { ArrowLeft, Send, Pencil, X, MessageCircle } from "lucide-react";
+import { ArrowLeft, Send, Pencil, X, MessageCircle, ChevronRight, UserPlus, UserCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { useAuth } from "@/components/AuthProvider";
 import { apiUrl } from "@/lib/api";
 import { toast } from "sonner";
@@ -16,6 +24,15 @@ interface Message {
   edited: boolean;
 }
 
+interface Member {
+  id: number;
+  username: string;
+  display_name: string | null;
+  city: string | null;
+  profile_photo: string | null;
+  is_friend: boolean;
+}
+
 const ChatConversation = () => {
   const navigate = useNavigate();
   const { groupId } = useParams();
@@ -23,10 +40,14 @@ const ChatConversation = () => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [groupName, setGroupName] = useState("Chat");
+  const [groupEmoji, setGroupEmoji] = useState<string | null>(null);
   const [memberCount, setMemberCount] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messagesLoading, setMessagesLoading] = useState(true);
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -37,19 +58,15 @@ const ChatConversation = () => {
   useEffect(() => {
     if (!groupId) return;
 
-    // Fetch group info
-    fetch(apiUrl(`/api/groups/${user?.id}`))
+    fetch(apiUrl(`/api/groupchats/${groupId}`))
       .then((res) => res.json())
-      .then((data: { id: number; name: string; member_count: number }[]) => {
-        const group = data.find((g) => String(g.id) === groupId);
-        if (group) {
-          setGroupName(group.name);
-          setMemberCount(group.member_count);
-        }
+      .then((data) => {
+        setGroupName(data.name);
+        setGroupEmoji(data.chat_photo);
+        setMemberCount(data.member_count);
       })
       .catch(() => toast.error("Couldn't load group info."));
 
-    // Fetch messages
     fetch(apiUrl(`/api/messages/${groupId}`))
       .then((res) => res.json())
       .then((data: { id: number; message: string; sent_time: string; user_id: number | null; username: string | null; edited: number }[]) => {
@@ -72,12 +89,43 @@ const ChatConversation = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Fetch members when sheet opens
+  useEffect(() => {
+    if (!membersOpen || !groupId || !user) return;
+    setMembersLoading(true);
+    fetch(apiUrl(`/api/groupchats/${groupId}/members?userId=${user.id}`))
+      .then((res) => res.json())
+      .then((data) => setMembers(Array.isArray(data) ? data : []))
+      .catch(() => toast.error("Couldn't load members."))
+      .finally(() => setMembersLoading(false));
+  }, [membersOpen, groupId, user]);
+
+  const toggleFriend = async (memberId: number, currentlyFriend: boolean) => {
+    if (!user) return;
+    try {
+      if (currentlyFriend) {
+        await fetch(apiUrl(`/api/friends?friendId=${memberId}&userId=${user.id}`), { method: "DELETE" });
+      } else {
+        await fetch(apiUrl("/api/friends"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user.id, friendId: memberId }),
+        });
+      }
+      setMembers((prev) =>
+        prev.map((m) => (m.id === memberId ? { ...m, is_friend: !currentlyFriend } : m))
+      );
+      toast.success(currentlyFriend ? "Removed friend" : "Added friend!");
+    } catch {
+      toast.error("Failed to update friend.");
+    }
+  };
+
   const handleSend = async () => {
     if (!message.trim() || !groupId) return;
     const text = message.trim();
     setMessage("");
 
-    // Optimistically add message
     const optimisticId = String(Date.now());
     setMessages((prev) => [
       ...prev,
@@ -149,9 +197,19 @@ const ChatConversation = () => {
     return messages[index].sender !== messages[index - 1].sender;
   };
 
+  const initials = (name: string | null, username: string) => {
+    if (name) {
+      const parts = name.split(" ");
+      return parts.length > 1
+        ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+        : name.slice(0, 2).toUpperCase();
+    }
+    return username.slice(0, 2).toUpperCase();
+  };
+
   return (
     <div className="h-[100dvh] bg-background flex flex-col max-w-4xl mx-auto w-full">
-      {/* Header */}
+      {/* Header — tappable to open members */}
       <header className="flex-shrink-0 flex items-center gap-3 px-3 sm:px-6 md:px-8 py-2.5 sm:py-3 bg-background/80 backdrop-blur-sm border-b border-border">
         <button
           onClick={() => navigate("/chats")}
@@ -160,11 +218,95 @@ const ChatConversation = () => {
         >
           <ArrowLeft className="h-4 w-4 text-foreground" />
         </button>
-        <div className="min-w-0">
-          <h1 className="text-sm sm:text-base font-semibold text-foreground leading-tight truncate">{groupName}</h1>
-          <p className="text-[11px] sm:text-xs text-muted-foreground">{memberCount} members</p>
-        </div>
+        <button
+          onClick={() => setMembersOpen(true)}
+          className="flex-1 flex items-center gap-2 min-w-0 hover:opacity-80 transition-opacity touch-manipulation text-left"
+        >
+          <div className="min-w-0 flex-1">
+            <h1 className="text-sm sm:text-base font-semibold text-foreground leading-tight truncate">{groupName}</h1>
+            <p className="text-[11px] sm:text-xs text-muted-foreground">{memberCount} members — tap to view</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        </button>
       </header>
+
+      {/* Members Sheet */}
+      <Sheet open={membersOpen} onOpenChange={setMembersOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-sm p-0">
+          <SheetHeader className="px-5 pt-5 pb-3 border-b border-border">
+            <SheetTitle className="flex items-center gap-2 text-base">
+              {groupEmoji && <span className="text-lg">{groupEmoji}</span>}
+              {groupName}
+            </SheetTitle>
+            <p className="text-xs text-muted-foreground">{memberCount} members</p>
+          </SheetHeader>
+
+          <div className="overflow-y-auto flex-1 px-3 py-2">
+            {membersLoading ? (
+              <div className="space-y-3 py-2">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="flex items-center gap-3 px-2">
+                    <Skeleton className="w-10 h-10 rounded-full flex-shrink-0" />
+                    <div className="flex-1 space-y-1.5">
+                      <Skeleton className="h-3.5 w-28" />
+                      <Skeleton className="h-3 w-20" />
+                    </div>
+                    <Skeleton className="h-8 w-20 rounded-lg" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {members.map((member) => {
+                  const isMe = member.id === user?.id;
+                  return (
+                    <div
+                      key={member.id}
+                      className="flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-secondary/50 transition-colors"
+                    >
+                      <Avatar className="w-10 h-10 flex-shrink-0">
+                        {member.profile_photo && <AvatarImage src={member.profile_photo} />}
+                        <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+                          {initials(member.display_name, member.username)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {member.display_name || member.username}
+                          {isMe && <span className="text-muted-foreground font-normal"> (you)</span>}
+                        </p>
+                        {member.city && (
+                          <p className="text-[11px] text-muted-foreground truncate">{member.city}</p>
+                        )}
+                      </div>
+                      {!isMe && (
+                        <Button
+                          variant={member.is_friend ? "secondary" : "default"}
+                          size="sm"
+                          className="h-8 px-3 text-xs gap-1.5 rounded-lg flex-shrink-0"
+                          onClick={() => toggleFriend(member.id, member.is_friend)}
+                        >
+                          {member.is_friend ? (
+                            <>
+                              <UserCheck className="w-3.5 h-3.5" />
+                              Friends
+                            </>
+                          ) : (
+                            <>
+                              <UserPlus className="w-3.5 h-3.5" />
+                              Add
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Messages */}
       <div
