@@ -3,6 +3,7 @@ import { CalendarDays, LogIn, MapPin, Pencil, Plus, Trash2, UserPlus, X } from "
 import { useNavigate } from "react-router-dom";
 import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/components/AuthProvider";
+import { apiUrl } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -83,7 +84,7 @@ const Events = () => {
     setLoading(true);
     setError(null);
 
-    fetch(`/api/events?userId=${user.id}`)
+    fetch(apiUrl(`/api/events?userId=${user.id}`))
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) {
@@ -108,7 +109,7 @@ const Events = () => {
     );
 
     try {
-      const response = await fetch(`/api/events/${eventId}/rsvp`, {
+      const response = await fetch(apiUrl(`/api/events/${eventId}/rsvp`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user.id }),
@@ -184,7 +185,7 @@ const Events = () => {
 
     try {
       const response = await fetch(
-        editingEventId ? `/api/events/${editingEventId}` : "/api/events",
+        editingEventId ? apiUrl(`/api/events/${editingEventId}`) : apiUrl("/api/events"),
         {
           method: editingEventId ? "PUT" : "POST",
           headers: { "Content-Type": "application/json" },
@@ -218,7 +219,7 @@ const Events = () => {
     if (!confirmed) return;
 
     try {
-      const response = await fetch(`/api/events/${eventId}`, {
+      const response = await fetch(apiUrl(`/api/events/${eventId}`), {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user.id }),

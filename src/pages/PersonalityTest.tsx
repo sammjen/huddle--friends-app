@@ -8,6 +8,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import { CheckCircle2, ArrowLeft } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
+import { apiUrl } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 
 type AnswerLetter = "A" | "B" | "C" | "D" | "E";
@@ -195,7 +196,7 @@ const PersonalityTest = () => {
         })),
       };
 
-      const res = await fetch("/api/hobby-answers", {
+      const res = await fetch(apiUrl("/api/hobby-answers"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/components/AuthProvider";
+import { apiUrl } from "@/lib/api";
 
 const GetStarted = () => {
   const navigate = useNavigate();
@@ -40,7 +41,7 @@ const GetStarted = () => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/login", {
+      const res = await fetch(apiUrl("/api/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: loginUsername.trim(), password: password.trim() }),
@@ -65,7 +66,7 @@ const GetStarted = () => {
     const displayName = `${firstName.trim()} ${lastName.trim()}`.trim();
 
     try {
-      const res = await fetch("/api/register", {
+      const res = await fetch(apiUrl("/api/register"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

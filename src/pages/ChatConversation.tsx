@@ -4,6 +4,7 @@ import { ArrowLeft, Send, Pencil, X, MessageCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/components/AuthProvider";
+import { apiUrl } from "@/lib/api";
 import { toast } from "sonner";
 
 interface Message {
@@ -37,7 +38,7 @@ const ChatConversation = () => {
     if (!groupId) return;
 
     // Fetch group info
-    fetch(`/api/groups/${user?.id}`)
+    fetch(apiUrl(`/api/groups/${user?.id}`))
       .then((res) => res.json())
       .then((data: { id: number; name: string; member_count: number }[]) => {
         const group = data.find((g) => String(g.id) === groupId);
@@ -49,7 +50,7 @@ const ChatConversation = () => {
       .catch(() => toast.error("Couldn't load group info."));
 
     // Fetch messages
-    fetch(`/api/messages/${groupId}`)
+    fetch(apiUrl(`/api/messages/${groupId}`))
       .then((res) => res.json())
       .then((data: { id: number; message: string; sent_time: string; user_id: number | null; username: string | null; edited: number }[]) => {
         setMessages(
@@ -91,7 +92,7 @@ const ChatConversation = () => {
     ]);
 
     try {
-      const res = await fetch("/api/messages", {
+      const res = await fetch(apiUrl("/api/messages"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user?.id, groupId: Number(groupId), message: text }),
@@ -133,7 +134,7 @@ const ChatConversation = () => {
     setMessage("");
 
     try {
-      await fetch(`/api/messages/${savedEditingId}`, {
+      await fetch(apiUrl(`/api/messages/${savedEditingId}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user?.id, message: text }),

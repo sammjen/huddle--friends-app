@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/components/AuthProvider";
+import { apiUrl } from "@/lib/api";
 
 interface Group {
   id: number;
@@ -64,7 +65,7 @@ const ChatList = () => {
   useEffect(() => {
     if (!isAuthenticated || !user) return;
     setLoading(true);
-    fetch(`/api/groups/${user.id}`)
+    fetch(apiUrl(`/api/groups/${user.id}`))
       .then((res) => res.json())
       .then((data) => setGroups(Array.isArray(data) ? data : []))
       .catch(() => toast.error("Couldn't load groups."))

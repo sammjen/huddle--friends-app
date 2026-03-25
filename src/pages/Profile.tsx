@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import AppHeader from "@/components/AppHeader";
+import { apiUrl } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import { toast } from "sonner";
 
@@ -121,7 +122,7 @@ const Profile = () => {
 
   useEffect(() => {
     if (!user) return;
-    fetch(`/api/profile/${user.id}`)
+    fetch(apiUrl(`/api/profile/${user.id}`))
       .then((r) => r.json())
       .then((data) => {
         setDisplayName(data.display_name || user.displayName || "");
@@ -139,7 +140,7 @@ const Profile = () => {
   useEffect(() => {
     if (!user) return;
     setLoadingPersonality(true);
-    fetch(`/api/profile/${user.id}/personality-results`)
+    fetch(apiUrl(`/api/profile/${user.id}/personality-results`))
       .then(async (r) => {
         if (r.status === 404) return null;
         if (!r.ok) throw new Error();
@@ -184,7 +185,7 @@ const Profile = () => {
     if (!user) return;
     setSavingProfile(true);
     try {
-      const res = await fetch(`/api/profile/${user.id}`, {
+      const res = await fetch(apiUrl(`/api/profile/${user.id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ display_name: displayName, bio, city, email, profile_photo: profilePhoto, hobbies }),
@@ -209,7 +210,7 @@ const Profile = () => {
     if (!user) return;
     setSavingInfo(true);
     try {
-      const res = await fetch(`/api/profile/${user.id}`, {
+      const res = await fetch(apiUrl(`/api/profile/${user.id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ display_name: displayName, bio, city, email, profile_photo: profilePhoto, hobbies }),
@@ -234,7 +235,7 @@ const Profile = () => {
     if (!user) return;
     setSavingHobbies(true);
     try {
-      const res = await fetch(`/api/profile/${user.id}`, {
+      const res = await fetch(apiUrl(`/api/profile/${user.id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ display_name: displayName, bio, city, email, profile_photo: profilePhoto, hobbies }),
@@ -268,7 +269,7 @@ const Profile = () => {
     }
     setSavingUsername(true);
     try {
-      const res = await fetch(`/api/profile/${user.id}/username`, {
+      const res = await fetch(apiUrl(`/api/profile/${user.id}/username`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: trimmed }),
@@ -305,7 +306,7 @@ const Profile = () => {
     }
     setSavingPassword(true);
     try {
-      const res = await fetch(`/api/profile/${user.id}/password`, {
+      const res = await fetch(apiUrl(`/api/profile/${user.id}/password`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currentPassword, newPassword }),
