@@ -33,6 +33,12 @@ interface Member {
   is_friend: boolean;
 }
 
+const CONVERSATION_STARTERS = [
+  "How do you like to spend your free time?",
+  "What are you doing this weekend?",
+  "What is your favorite place nearby to visit?",
+];
+
 const ChatConversation = () => {
   const navigate = useNavigate();
   const { groupId } = useParams();
@@ -190,6 +196,11 @@ const ChatConversation = () => {
     } catch {
       toast.error("Failed to edit message.");
     }
+  };
+
+  const applyConversationStarter = (starter: string) => {
+    setMessage(starter);
+    setTimeout(() => inputRef.current?.focus(), 10);
   };
 
   const shouldShowSender = (index: number) => {
@@ -394,6 +405,22 @@ const ChatConversation = () => {
         className="flex-shrink-0 bg-background border-t border-border"
         style={{ paddingBottom: "max(0.625rem, env(safe-area-inset-bottom))" }}
       >
+        {!editingId && (
+          <div className="max-w-4xl mx-auto px-3 sm:px-4 pt-2 pb-1">
+            <div className="flex gap-2 overflow-x-auto no-scrollbar">
+              {CONVERSATION_STARTERS.map((starter) => (
+                <button
+                  key={starter}
+                  type="button"
+                  onClick={() => applyConversationStarter(starter)}
+                  className="whitespace-nowrap rounded-full border border-border bg-secondary px-3 py-1.5 text-xs text-foreground hover:bg-secondary/80 transition-colors"
+                >
+                  {starter}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {editingId && (
           <div className="flex items-center justify-between px-4 py-1.5 bg-secondary/60 border-b border-border">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
