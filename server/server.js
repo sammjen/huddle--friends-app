@@ -139,6 +139,17 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, friend_id)
   );
+
+  CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reporter_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    reported_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','reviewed','dismissed','action_taken')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    resolved_at TEXT
+  );
 `);
 
 // Hobby & interest question catalog
@@ -817,12 +828,14 @@ app.get("/api/admin/stats", requireAdmin, (req, res) => {
     const messageCount = db.prepare("SELECT COUNT(*) as count FROM message").get();
     const groupchatCount = db.prepare("SELECT COUNT(*) as count FROM groupchat WHERE active = 1").get();
     const personalityCount = db.prepare("SELECT COUNT(*) as count FROM personalitytest").get();
+    const pendingReports = db.prepare("SELECT COUNT(*) as count FROM reports WHERE status = 'pending'").get();
     res.json({
       users: userCount.count,
       admins: adminCount.count,
       messages: messageCount.count,
       groupchats: groupchatCount.count,
       personalityTests: personalityCount.count,
+      pendingReports: pendingReports.count,
     });
   } catch (err) {
     console.error(err);
@@ -899,6 +912,102 @@ app.get("/api/admin/messages", requireAdmin, (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch messages." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Reports
+// ---------------------------------------------------------------------------
+
+// POST /api/reports - Submit a report against another user
+app.post("/api/reports", requireAuth, (req, res) => {
+  try {
+    const reporterId = req.currentUser.id;
+    const { reportedId, reason, description } = req.body;
+
+    if (!reportedId || !reason) {
+      return res.status(400).json({ error: "reportedId and reason are required." });
+    }
+    if (reporterId === Number(reportedId)) {
+      return res.status(400).json({ error: "You cannot report yourself." });
+    }
+
+    const target = db.prepare("SELECT id FROM user WHERE id = ?").get(reportedId);
+    if (!target) return res.status(404).json({ error: "Reported user not found." });
+
+    const result = db
+      .prepare("INSERT INTO reports (reporter_id, reported_id, reason, description) VALUES (?, ?, ?, ?)")
+      .run(reporterId, reportedId, reason, description || null);
+
+    res.status(201).json({ success: true, reportId: Number(result.lastInsertRowid) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to submit report." });
+  }
+});
+
+// GET /api/admin/reports - All reports with user info
+app.get("/api/admin/reports", requireAdmin, (req, res) => {
+  try {
+    const reports = db
+      .prepare(`
+        SELECT r.id, r.reason, r.description, r.status, r.created_at, r.resolved_at,
+          r.reporter_id, rp.username AS reporter_username, rp.display_name AS reporter_display_name,
+          r.reported_id, rd.username AS reported_username, rd.display_name AS reported_display_name, rd.active AS reported_active
+        FROM reports r
+        LEFT JOIN user rp ON r.reporter_id = rp.id
+        LEFT JOIN user rd ON r.reported_id = rd.id
+        ORDER BY
+          CASE r.status WHEN 'pending' THEN 0 ELSE 1 END,
+          r.created_at DESC
+      `)
+      .all();
+    res.json(reports);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch reports." });
+  }
+});
+
+// PUT /api/admin/reports/:id - Update report status (dismiss, reviewed, action_taken)
+app.put("/api/admin/reports/:id", requireAdmin, (req, res) => {
+  try {
+    const reportId = Number(req.params.id);
+    const { status, deactivateUser } = req.body;
+
+    if (!["pending", "reviewed", "dismissed", "action_taken"].includes(status)) {
+      return res.status(400).json({ error: "Invalid status." });
+    }
+
+    const report = db.prepare("SELECT id, reported_id FROM reports WHERE id = ?").get(reportId);
+    if (!report) return res.status(404).json({ error: "Report not found." });
+
+    const resolvedAt = status === "pending" ? null : new Date().toISOString();
+    db.prepare("UPDATE reports SET status = ?, resolved_at = ? WHERE id = ?")
+      .run(status, resolvedAt, reportId);
+
+    if (deactivateUser && report.reported_id) {
+      db.prepare("UPDATE user SET active = 0 WHERE id = ?").run(report.reported_id);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update report." });
+  }
+});
+
+// DELETE /api/admin/reports/:id - Delete a report
+app.delete("/api/admin/reports/:id", requireAdmin, (req, res) => {
+  try {
+    const reportId = Number(req.params.id);
+    const report = db.prepare("SELECT id FROM reports WHERE id = ?").get(reportId);
+    if (!report) return res.status(404).json({ error: "Report not found." });
+    db.prepare("DELETE FROM reports WHERE id = ?").run(reportId);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete report." });
   }
 });
 

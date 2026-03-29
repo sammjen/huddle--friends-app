@@ -6,7 +6,7 @@ import { apiUrl } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Users, MessageSquare, LayoutDashboard, Shield, FlaskConical, RefreshCw } from "lucide-react";
+import { Users, MessageSquare, LayoutDashboard, Shield, FlaskConical, RefreshCw, Flag, AlertTriangle } from "lucide-react";
 
 interface Stats {
   users: number;
@@ -14,6 +14,23 @@ interface Stats {
   messages: number;
   groupchats: number;
   personalityTests: number;
+  pendingReports: number;
+}
+
+interface ReportRow {
+  id: number;
+  reason: string;
+  description: string | null;
+  status: "pending" | "reviewed" | "dismissed" | "action_taken";
+  created_at: string;
+  resolved_at: string | null;
+  reporter_id: number;
+  reporter_username: string | null;
+  reporter_display_name: string | null;
+  reported_id: number;
+  reported_username: string | null;
+  reported_display_name: string | null;
+  reported_active: number;
 }
 
 interface UserRow {
@@ -53,9 +70,10 @@ const Admin = () => {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [groupchats, setGroupchats] = useState<GroupchatRow[]>([]);
   const [messages, setMessages] = useState<MessageRow[]>([]);
+  const [reports, setReports] = useState<ReportRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "users" | "chats" | "messages">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "users" | "chats" | "messages" | "reports">("overview");
 
   useEffect(() => {
     if (!user) { navigate("/get-started"); return; }
@@ -67,16 +85,18 @@ const Admin = () => {
     setLoading(true);
     setError(null);
     try {
-      const [s, u, g, m] = await Promise.all([
+      const [s, u, g, m, rp] = await Promise.all([
         fetch(apiUrl(`/api/admin/stats?userId=${user.id}`)).then((r) => r.json()),
         fetch(apiUrl(`/api/admin/users?userId=${user.id}`)).then((r) => r.json()),
         fetch(apiUrl(`/api/admin/groupchats?userId=${user.id}`)).then((r) => r.json()),
         fetch(apiUrl(`/api/admin/messages?userId=${user.id}&limit=50`)).then((r) => r.json()),
+        fetch(apiUrl(`/api/admin/reports?userId=${user.id}`)).then((r) => r.json()),
       ]);
       setStats(s);
       setUsers(u);
       setGroupchats(g);
       setMessages(m);
+      setReports(Array.isArray(rp) ? rp : []);
     } catch {
       setError("Failed to load admin data. Is the server running?");
     } finally {
@@ -97,13 +117,44 @@ const Admin = () => {
     setUsers((prev) => prev.map((u) => u.id === targetId ? { ...u, role: newRole } : u));
   };
 
+  const updateReportStatus = async (reportId: number, status: string, deactivateUser = false) => {
+    if (!user) return;
+    await fetch(apiUrl(`/api/admin/reports/${reportId}`), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: user.id, status, deactivateUser }),
+    });
+    setReports((prev) =>
+      prev.map((r) =>
+        r.id === reportId
+          ? { ...r, status: status as ReportRow["status"], resolved_at: status === "pending" ? null : new Date().toISOString() }
+          : r
+      )
+    );
+    if (deactivateUser) {
+      const report = reports.find((r) => r.id === reportId);
+      if (report) {
+        setUsers((prev) => prev.map((u) => u.id === report.reported_id ? { ...u, active: 0 } : u));
+      }
+    }
+  };
+
+  const deleteReport = async (reportId: number) => {
+    if (!user) return;
+    await fetch(apiUrl(`/api/admin/reports/${reportId}?userId=${user.id}`), { method: "DELETE" });
+    setReports((prev) => prev.filter((r) => r.id !== reportId));
+  };
+
   if (!user || user.role !== "admin") return null;
+
+  const pendingCount = reports.filter((r) => r.status === "pending").length;
 
   const tabs = [
     { key: "overview", label: "Overview", icon: LayoutDashboard },
     { key: "users", label: "Users", icon: Users },
     { key: "chats", label: "Group Chats", icon: MessageSquare },
     { key: "messages", label: "Messages", icon: MessageSquare },
+    { key: "reports", label: `Reports${pendingCount > 0 ? ` (${pendingCount})` : ""}`, icon: Flag },
   ] as const;
 
   return (
@@ -151,13 +202,14 @@ const Admin = () => {
 
         {/* Overview Tab */}
         {activeTab === "overview" && (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             {[
               { label: "Total Users", value: stats?.users, icon: Users, color: "text-blue-500" },
               { label: "Admins", value: stats?.admins, icon: Shield, color: "text-purple-500" },
               { label: "Group Chats", value: stats?.groupchats, icon: LayoutDashboard, color: "text-green-500" },
               { label: "Messages", value: stats?.messages, icon: MessageSquare, color: "text-orange-500" },
               { label: "Personality Tests", value: stats?.personalityTests, icon: FlaskConical, color: "text-pink-500" },
+              { label: "Pending Reports", value: stats?.pendingReports, icon: AlertTriangle, color: "text-red-500" },
             ].map(({ label, value, icon: Icon, color }) => (
               <Card key={label}>
                 <CardHeader className="pb-2">
@@ -310,6 +362,117 @@ const Admin = () => {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* Reports Tab */}
+        {activeTab === "reports" && (
+          <div className="space-y-4">
+            {reports.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-3">
+                    <Shield className="h-6 w-6 text-green-500" />
+                  </div>
+                  <p className="text-sm font-medium text-foreground">No reports</p>
+                  <p className="text-xs text-muted-foreground mt-1">Everything looks good!</p>
+                </CardContent>
+              </Card>
+            ) : (
+              reports.map((r) => (
+                <Card key={r.id} className={r.status === "pending" ? "border-destructive/30" : ""}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center ${
+                          r.status === "pending" ? "bg-destructive/10" : "bg-muted"
+                        }`}>
+                          <Flag className={`h-4 w-4 ${r.status === "pending" ? "text-destructive" : "text-muted-foreground"}`} />
+                        </div>
+                        <div>
+                          <CardTitle className="text-sm">
+                            {r.reported_display_name || r.reported_username || "Deleted user"}
+                            {r.reported_active === 0 && (
+                              <span className="ml-2 text-xs font-normal text-muted-foreground">(deactivated)</span>
+                            )}
+                          </CardTitle>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Reported by {r.reporter_display_name || r.reporter_username || "Deleted user"}
+                            {" · "}
+                            {new Date(r.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                          </p>
+                        </div>
+                      </div>
+                      <Badge variant={
+                        r.status === "pending" ? "destructive" :
+                        r.status === "action_taken" ? "default" :
+                        "secondary"
+                      }>
+                        {r.status === "action_taken" ? "Action taken" : r.status}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-0 space-y-3">
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <span className="px-2.5 py-1 rounded-full bg-secondary text-foreground font-medium">{r.reason}</span>
+                    </div>
+                    {r.description && (
+                      <p className="text-sm text-muted-foreground bg-secondary/50 rounded-lg p-3">{r.description}</p>
+                    )}
+                    <div className="flex gap-2 pt-1">
+                      {r.status === "pending" && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-xs h-7"
+                            onClick={() => updateReportStatus(r.id, "dismissed")}
+                          >
+                            Dismiss
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-xs h-7"
+                            onClick={() => updateReportStatus(r.id, "reviewed")}
+                          >
+                            Mark Reviewed
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="text-xs h-7"
+                            onClick={() => updateReportStatus(r.id, "action_taken", true)}
+                          >
+                            Deactivate User
+                          </Button>
+                        </>
+                      )}
+                      {r.status !== "pending" && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-xs h-7"
+                            onClick={() => updateReportStatus(r.id, "pending")}
+                          >
+                            Reopen
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7 text-muted-foreground hover:text-destructive"
+                            onClick={() => deleteReport(r.id)}
+                          >
+                            Delete
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
         )}
       </main>
     </div>

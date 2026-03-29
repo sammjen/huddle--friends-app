@@ -122,3 +122,15 @@ CREATE TABLE IF NOT EXISTS event_rsvps (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (event_id, user_id)
 );
+
+-- User reports
+CREATE TABLE IF NOT EXISTS reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  reporter_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  reported_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  reason TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','reviewed','dismissed','action_taken')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  resolved_at TEXT
+);

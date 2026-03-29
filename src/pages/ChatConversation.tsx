@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useParams, Navigate } from "react-router-dom";
-import { ArrowLeft, Send, Pencil, X, MessageCircle, ChevronRight, UserPlus, UserCheck } from "lucide-react";
+import { ArrowLeft, Send, Pencil, X, MessageCircle, ChevronRight, UserPlus, UserCheck, Flag } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,14 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/components/AuthProvider";
 import { apiUrl } from "@/lib/api";
 import { toast } from "sonner";
@@ -54,6 +62,10 @@ const ChatConversation = () => {
   const [membersOpen, setMembersOpen] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [reportTarget, setReportTarget] = useState<Member | null>(null);
+  const [reportReason, setReportReason] = useState("");
+  const [reportDescription, setReportDescription] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -124,6 +136,44 @@ const ChatConversation = () => {
       toast.success(currentlyFriend ? "Removed friend" : "Added friend!");
     } catch {
       toast.error("Failed to update friend.");
+    }
+  };
+
+  const REPORT_REASONS = [
+    "Harassment or bullying",
+    "Spam or scam",
+    "Inappropriate content",
+    "Impersonation",
+    "Other",
+  ];
+
+  const submitReport = async () => {
+    if (!user || !reportTarget || !reportReason) return;
+    setReportSubmitting(true);
+    try {
+      const res = await fetch(apiUrl("/api/reports"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          reportedId: reportTarget.id,
+          reason: reportReason,
+          description: reportDescription.trim() || undefined,
+        }),
+      });
+      if (res.ok) {
+        toast.success("Report submitted. An admin will review it.");
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to submit report.");
+      }
+    } catch {
+      toast.error("Failed to submit report.");
+    } finally {
+      setReportSubmitting(false);
+      setReportTarget(null);
+      setReportReason("");
+      setReportDescription("");
     }
   };
 
@@ -291,24 +341,35 @@ const ChatConversation = () => {
                         )}
                       </div>
                       {!isMe && (
-                        <Button
-                          variant={member.is_friend ? "secondary" : "default"}
-                          size="sm"
-                          className="h-8 px-3 text-xs gap-1.5 rounded-lg flex-shrink-0"
-                          onClick={() => toggleFriend(member.id, member.is_friend)}
-                        >
-                          {member.is_friend ? (
-                            <>
-                              <UserCheck className="w-3.5 h-3.5" />
-                              Friends
-                            </>
-                          ) : (
-                            <>
-                              <UserPlus className="w-3.5 h-3.5" />
-                              Add
-                            </>
-                          )}
-                        </Button>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <Button
+                            variant={member.is_friend ? "secondary" : "default"}
+                            size="sm"
+                            className="h-8 px-3 text-xs gap-1.5 rounded-lg"
+                            onClick={() => toggleFriend(member.id, member.is_friend)}
+                          >
+                            {member.is_friend ? (
+                              <>
+                                <UserCheck className="w-3.5 h-3.5" />
+                                Friends
+                              </>
+                            ) : (
+                              <>
+                                <UserPlus className="w-3.5 h-3.5" />
+                                Add
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                            onClick={() => setReportTarget(member)}
+                            title="Report user"
+                          >
+                            <Flag className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
                       )}
                     </div>
                   );
@@ -318,6 +379,60 @@ const ChatConversation = () => {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Report Dialog */}
+      <Dialog open={!!reportTarget} onOpenChange={(open) => { if (!open) { setReportTarget(null); setReportReason(""); setReportDescription(""); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Flag className="h-4 w-4 text-destructive" />
+              Report {reportTarget?.display_name || reportTarget?.username}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Reason</label>
+              <div className="grid gap-2">
+                {REPORT_REASONS.map((reason) => (
+                  <button
+                    key={reason}
+                    onClick={() => setReportReason(reason)}
+                    className={`text-left px-3 py-2.5 rounded-lg border text-sm transition-colors ${
+                      reportReason === reason
+                        ? "border-primary bg-primary/10 text-foreground font-medium"
+                        : "border-border bg-secondary/30 text-muted-foreground hover:bg-secondary/60"
+                    }`}
+                  >
+                    {reason}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Additional details (optional)</label>
+              <Textarea
+                value={reportDescription}
+                onChange={(e) => setReportDescription(e.target.value)}
+                placeholder="Describe what happened..."
+                className="resize-none"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setReportTarget(null); setReportReason(""); setReportDescription(""); }}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={submitReport}
+              disabled={!reportReason || reportSubmitting}
+            >
+              {reportSubmitting ? "Submitting..." : "Submit Report"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Messages */}
       <div
