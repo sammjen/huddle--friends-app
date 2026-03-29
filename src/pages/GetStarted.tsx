@@ -48,6 +48,12 @@ const GetStarted = () => {
       });
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 403 && data.code === "ACCOUNT_DEACTIVATED") {
+          navigate(
+            `/account-deactivated?username=${encodeURIComponent(data.username || loginUsername.trim())}`
+          );
+          return;
+        }
         setError(data.error || "Something went wrong.");
         return;
       }

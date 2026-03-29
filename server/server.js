@@ -16,6 +16,33 @@ const dbPath = join(__dirname, "..", "db", "app.db");
 const db = new Database(dbPath);
 db.pragma("foreign_keys = ON");
 
+// Standalone ensure (older DBs or partial migrations may lack these tables)
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      reporter_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+      reported_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+      reason TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','reviewed','dismissed','action_taken')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      resolved_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS account_appeals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+      admin_note TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      resolved_at TEXT
+    );
+  `);
+} catch (e) {
+  console.error("ensure reports/appeals tables:", e);
+}
+
 app.use(cors());
 app.use(express.json());
 
@@ -64,28 +91,39 @@ if (!adminExists) {
   for (const gc of groupchats) insertMembership.run(adminId, gc.id);
 }
 
+function parseUserIdParam(req) {
+  const raw = req.query.userId ?? req.body?.userId;
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  const n = Number(v);
+  return Number.isInteger(n) ? n : NaN;
+}
+
 // Admin middleware — expects ?userId=<id> on GET or { userId } in body
 const requireAdmin = (req, res, next) => {
-  const userId = Number(req.query.userId || req.body?.userId);
+  const userId = parseUserIdParam(req);
   if (!Number.isInteger(userId)) return res.status(401).json({ error: "Authentication required." });
-  const user = db.prepare("SELECT role FROM user WHERE id = ?").get(userId);
+  const user = db.prepare("SELECT role, active FROM user WHERE id = ?").get(userId);
   if (!user || user.role !== "admin") return res.status(403).json({ error: "Admin access required." });
+  if (user.active === 0) return res.status(403).json({ error: "Account deactivated.", code: "ACCOUNT_DEACTIVATED" });
   req.currentUser = { id: userId, role: user.role };
   next();
 };
 
 const requireAuth = (req, res, next) => {
-  const userId = Number(req.query.userId || req.body?.userId);
+  const userId = parseUserIdParam(req);
   if (!Number.isInteger(userId)) {
     return res.status(401).json({ error: "Authentication required." });
   }
 
-  const user = db.prepare("SELECT id, role FROM user WHERE id = ?").get(userId);
+  const user = db.prepare("SELECT id, role, active FROM user WHERE id = ?").get(userId);
   if (!user) {
     return res.status(401).json({ error: "Authentication required." });
   }
+  if (user.active === 0) {
+    return res.status(403).json({ error: "Account deactivated.", code: "ACCOUNT_DEACTIVATED" });
+  }
 
-  req.currentUser = user;
+  req.currentUser = { id: user.id, role: user.role };
   next();
 };
 
@@ -147,6 +185,16 @@ db.exec(`
     reason TEXT NOT NULL,
     description TEXT,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','reviewed','dismissed','action_taken')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    resolved_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS account_appeals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    message TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+    admin_note TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     resolved_at TEXT
   );
@@ -335,15 +383,72 @@ app.post("/api/login", async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: "Username and password required." });
     const user = db
-      .prepare("SELECT id, username, city, password, display_name, role FROM user WHERE username = ?")
+      .prepare("SELECT id, username, city, password, display_name, role, active FROM user WHERE username = ?")
       .get(username);
     if (!user) return res.status(404).json({ error: "User not found." });
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(401).json({ error: "Incorrect password." });
+    if (user.active === 0) {
+      return res.status(403).json({
+        error: "This account has been deactivated.",
+        code: "ACCOUNT_DEACTIVATED",
+        username: user.username,
+      });
+    }
     res.json({ id: user.id, username: user.username, city: user.city, display_name: user.display_name, role: user.role || "user" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to login." });
+  }
+});
+
+// GET /api/auth/verify?userId= — lightweight session check (matches app auth pattern)
+app.get("/api/auth/verify", (req, res) => {
+  try {
+    const userId = Number(req.query.userId);
+    if (!Number.isInteger(userId)) return res.status(400).json({ error: "userId required." });
+    const row = db.prepare("SELECT id, username, active FROM user WHERE id = ?").get(userId);
+    if (!row) return res.status(404).json({ error: "User not found." });
+    res.json({ id: row.id, username: row.username, active: row.active });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to verify." });
+  }
+});
+
+// POST /api/account-appeal — deactivated users submit a reactivation request (password proves identity)
+app.post("/api/account-appeal", async (req, res) => {
+  try {
+    const { username, password, message } = req.body;
+    const trimmedMsg = String(message || "").trim();
+    if (!username || !password || !trimmedMsg) {
+      return res.status(400).json({ error: "Username, password, and a message are required." });
+    }
+    if (trimmedMsg.length < 10) {
+      return res.status(400).json({ error: "Please write at least 10 characters explaining your situation." });
+    }
+    const user = db
+      .prepare("SELECT id, password, active FROM user WHERE username = ?")
+      .get(String(username).trim());
+    if (!user) return res.status(404).json({ error: "User not found." });
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) return res.status(401).json({ error: "Incorrect password." });
+    if (user.active !== 0) {
+      return res.status(400).json({ error: "This account is already active. You can log in normally." });
+    }
+    const pending = db
+      .prepare("SELECT id FROM account_appeals WHERE user_id = ? AND status = 'pending'")
+      .get(user.id);
+    if (pending) {
+      return res.status(409).json({ error: "You already have a pending appeal. An admin will review it soon." });
+    }
+    const result = db
+      .prepare("INSERT INTO account_appeals (user_id, message) VALUES (?, ?)")
+      .run(user.id, trimmedMsg);
+    res.status(201).json({ success: true, appealId: Number(result.lastInsertRowid) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to submit appeal." });
   }
 });
 
@@ -823,19 +928,28 @@ app.put("/api/profile/:userId/username", (req, res) => {
 // GET /api/admin/stats - Overview counts
 app.get("/api/admin/stats", requireAdmin, (req, res) => {
   try {
+    const safeCount = (sql) => {
+      try {
+        return db.prepare(sql).get().count;
+      } catch {
+        return 0;
+      }
+    };
     const userCount = db.prepare("SELECT COUNT(*) as count FROM user").get();
     const adminCount = db.prepare("SELECT COUNT(*) as count FROM user WHERE role = 'admin'").get();
     const messageCount = db.prepare("SELECT COUNT(*) as count FROM message").get();
     const groupchatCount = db.prepare("SELECT COUNT(*) as count FROM groupchat WHERE active = 1").get();
     const personalityCount = db.prepare("SELECT COUNT(*) as count FROM personalitytest").get();
-    const pendingReports = db.prepare("SELECT COUNT(*) as count FROM reports WHERE status = 'pending'").get();
+    const pendingReports = safeCount("SELECT COUNT(*) as count FROM reports WHERE status = 'pending'");
+    const pendingAppeals = safeCount("SELECT COUNT(*) as count FROM account_appeals WHERE status = 'pending'");
     res.json({
       users: userCount.count,
       admins: adminCount.count,
       messages: messageCount.count,
       groupchats: groupchatCount.count,
       personalityTests: personalityCount.count,
-      pendingReports: pendingReports.count,
+      pendingReports,
+      pendingAppeals,
     });
   } catch (err) {
     console.error(err);
@@ -924,20 +1038,22 @@ app.post("/api/reports", requireAuth, (req, res) => {
   try {
     const reporterId = req.currentUser.id;
     const { reportedId, reason, description } = req.body;
+    const reportedUserId = Number(reportedId);
+    const reasonStr = String(reason || "").trim();
 
-    if (!reportedId || !reason) {
+    if (!Number.isInteger(reportedUserId) || !reasonStr) {
       return res.status(400).json({ error: "reportedId and reason are required." });
     }
-    if (reporterId === Number(reportedId)) {
+    if (reporterId === reportedUserId) {
       return res.status(400).json({ error: "You cannot report yourself." });
     }
 
-    const target = db.prepare("SELECT id FROM user WHERE id = ?").get(reportedId);
+    const target = db.prepare("SELECT id FROM user WHERE id = ?").get(reportedUserId);
     if (!target) return res.status(404).json({ error: "Reported user not found." });
 
     const result = db
       .prepare("INSERT INTO reports (reporter_id, reported_id, reason, description) VALUES (?, ?, ?, ?)")
-      .run(reporterId, reportedId, reason, description || null);
+      .run(reporterId, reportedUserId, reasonStr, description || null);
 
     res.status(201).json({ success: true, reportId: Number(result.lastInsertRowid) });
   } catch (err) {
@@ -1008,6 +1124,61 @@ app.delete("/api/admin/reports/:id", requireAdmin, (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to delete report." });
+  }
+});
+
+// GET /api/admin/appeals - Account reactivation appeals
+app.get("/api/admin/appeals", requireAdmin, (req, res) => {
+  try {
+    const rows = db
+      .prepare(`
+        SELECT a.id, a.user_id, a.message, a.status, a.admin_note, a.created_at, a.resolved_at,
+          u.username, u.display_name, u.email, u.active
+        FROM account_appeals a
+        JOIN user u ON a.user_id = u.id
+        ORDER BY
+          CASE a.status WHEN 'pending' THEN 0 ELSE 1 END,
+          a.created_at DESC
+      `)
+      .all();
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch appeals." });
+  }
+});
+
+// PUT /api/admin/appeals/:id - Approve (reactivate) or reject
+app.put("/api/admin/appeals/:id", requireAdmin, (req, res) => {
+  try {
+    const appealId = Number(req.params.id);
+    const { status, adminNote } = req.body;
+    if (!["approved", "rejected"].includes(status)) {
+      return res.status(400).json({ error: "status must be 'approved' or 'rejected'." });
+    }
+    const appeal = db.prepare("SELECT id, user_id, status FROM account_appeals WHERE id = ?").get(appealId);
+    if (!appeal) return res.status(404).json({ error: "Appeal not found." });
+    if (appeal.status !== "pending") {
+      return res.status(400).json({ error: "This appeal has already been resolved." });
+    }
+    const note = adminNote != null ? String(adminNote).trim() || null : null;
+    const resolvedAt = new Date().toISOString();
+
+    db.transaction(() => {
+      db.prepare(`
+        UPDATE account_appeals
+        SET status = ?, admin_note = ?, resolved_at = ?
+        WHERE id = ?
+      `).run(status, note, resolvedAt, appealId);
+      if (status === "approved") {
+        db.prepare("UPDATE user SET active = 1 WHERE id = ?").run(appeal.user_id);
+      }
+    })();
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update appeal." });
   }
 });
 
