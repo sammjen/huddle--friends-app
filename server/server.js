@@ -140,6 +140,15 @@ db.exec(`
     PRIMARY KEY (user_id, friend_id)
   );
 
+  CREATE TABLE IF NOT EXISTS friend_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    requester_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    receiver_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','declined')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (requester_id, receiver_id)
+  );
+
   CREATE TABLE IF NOT EXISTS reports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     reporter_id INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
@@ -579,16 +588,39 @@ app.get("/api/groupchats/:id/members", requireAuth, (req, res) => {
     const members = db
       .prepare(`
         SELECT u.id, u.username, u.display_name, u.city, u.profile_photo,
-          EXISTS(
-            SELECT 1 FROM user_friends WHERE user_id = ? AND friend_id = u.id
-          ) AS is_friend
+          CASE
+            WHEN EXISTS(
+              SELECT 1 FROM user_friends WHERE user_id = ? AND friend_id = u.id
+            ) AND EXISTS(
+              SELECT 1 FROM user_friends WHERE user_id = u.id AND friend_id = ?
+            ) THEN 'friends'
+            WHEN EXISTS(
+              SELECT 1 FROM friend_requests fr WHERE fr.requester_id = ? AND fr.receiver_id = u.id AND fr.status = 'pending'
+            ) THEN 'outgoing'
+            WHEN EXISTS(
+              SELECT 1 FROM friend_requests fr WHERE fr.requester_id = u.id AND fr.receiver_id = ? AND fr.status = 'pending'
+            ) THEN 'incoming'
+            ELSE 'none'
+          END AS friend_status,
+          CASE
+            WHEN EXISTS(
+              SELECT 1 FROM user_friends WHERE user_id = ? AND friend_id = u.id
+            ) AND EXISTS(
+              SELECT 1 FROM user_friends WHERE user_id = u.id AND friend_id = ?
+            ) THEN 1
+            ELSE 0
+          END AS is_friend
         FROM user u
         JOIN user_groupchat ug ON u.id = ug.user_id
         WHERE ug.groupchat_id = ?
         ORDER BY u.display_name ASC
       `)
-      .all(currentUserId, groupId)
-      .map((m) => ({ ...m, is_friend: Boolean(m.is_friend) }));
+      .all(currentUserId, currentUserId, currentUserId, currentUserId, currentUserId, currentUserId, groupId)
+      .map((m) => ({
+        ...m,
+        is_friend: Boolean(m.is_friend),
+        friend_status: m.friend_status || (m.is_friend ? "friends" : "none"),
+      }));
     res.json(members);
   } catch (err) {
     console.error(err);
@@ -596,13 +628,125 @@ app.get("/api/groupchats/:id/members", requireAuth, (req, res) => {
   }
 });
 
-// POST /api/friends - Add a friend
+// ---------------------------------------------------------------------------
+// Friend requests & friendships
+// ---------------------------------------------------------------------------
+
+// POST /api/friend-requests - Send a friend request
+app.post("/api/friend-requests", requireAuth, (req, res) => {
+  try {
+    const requesterId = req.currentUser.id;
+    const { receiverId } = req.body;
+    if (!receiverId || requesterId === receiverId) {
+      return res.status(400).json({ error: "Invalid receiver." });
+    }
+
+    const receiver = db.prepare("SELECT id FROM user WHERE id = ?").get(receiverId);
+    if (!receiver) return res.status(404).json({ error: "User not found." });
+
+    // Already friends?
+    const alreadyFriends = db
+      .prepare("SELECT 1 FROM user_friends WHERE user_id = ? AND friend_id = ?")
+      .get(requesterId, receiverId);
+    if (alreadyFriends) return res.json({ success: true, status: "friends" });
+
+    // If they already requested you, accept both sides automatically
+    const incoming = db
+      .prepare("SELECT id, status FROM friend_requests WHERE requester_id = ? AND receiver_id = ?")
+      .get(receiverId, requesterId);
+    if (incoming && incoming.status === "pending") {
+      const txn = db.transaction(() => {
+        db.prepare("UPDATE friend_requests SET status = 'accepted' WHERE id = ?").run(incoming.id);
+        db.prepare("INSERT OR IGNORE INTO user_friends (user_id, friend_id) VALUES (?, ?)").run(requesterId, receiverId);
+        db.prepare("INSERT OR IGNORE INTO user_friends (user_id, friend_id) VALUES (?, ?)").run(receiverId, requesterId);
+      });
+      txn();
+      return res.json({ success: true, status: "friends", autoAccepted: true });
+    }
+
+    // Upsert pending request
+    db.prepare(`
+      INSERT INTO friend_requests (requester_id, receiver_id, status)
+      VALUES (?, ?, 'pending')
+      ON CONFLICT(requester_id, receiver_id) DO UPDATE SET
+        status = 'pending',
+        created_at = datetime('now')
+    `).run(requesterId, receiverId);
+
+    res.status(201).json({ success: true, status: "pending" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to send request." });
+  }
+});
+
+// GET /api/friend-requests - Incoming pending requests for the current user
+app.get("/api/friend-requests", requireAuth, (req, res) => {
+  try {
+    const receiverId = req.currentUser.id;
+    const requests = db
+      .prepare(`
+        SELECT fr.id, fr.requester_id, fr.created_at,
+          u.username, u.display_name, u.city, u.profile_photo
+        FROM friend_requests fr
+        JOIN user u ON fr.requester_id = u.id
+        WHERE fr.receiver_id = ? AND fr.status = 'pending'
+        ORDER BY fr.created_at DESC
+      `)
+      .all(receiverId);
+    res.json(requests);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch requests." });
+  }
+});
+
+// POST /api/friend-requests/respond - Accept or decline a request
+app.post("/api/friend-requests/respond", requireAuth, (req, res) => {
+  try {
+    const receiverId = req.currentUser.id;
+    const { requesterId, action } = req.body;
+    if (!requesterId || !["accept", "decline"].includes(action)) {
+      return res.status(400).json({ error: "Invalid payload." });
+    }
+
+    const request = db
+      .prepare("SELECT id, status FROM friend_requests WHERE requester_id = ? AND receiver_id = ?")
+      .get(requesterId, receiverId);
+    if (!request || request.status !== "pending") {
+      return res.status(404).json({ error: "Request not found." });
+    }
+
+    if (action === "accept") {
+      const txn = db.transaction(() => {
+        db.prepare("UPDATE friend_requests SET status = 'accepted' WHERE id = ?").run(request.id);
+        db.prepare("INSERT OR IGNORE INTO user_friends (user_id, friend_id) VALUES (?, ?)").run(receiverId, requesterId);
+        db.prepare("INSERT OR IGNORE INTO user_friends (user_id, friend_id) VALUES (?, ?)").run(requesterId, receiverId);
+      });
+      txn();
+      return res.json({ success: true, status: "friends" });
+    }
+
+    db.prepare("UPDATE friend_requests SET status = 'declined' WHERE id = ?").run(request.id);
+    res.json({ success: true, status: "declined" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update request." });
+  }
+});
+
+// POST /api/friends - Add a friend directly (legacy/manual)
 app.post("/api/friends", requireAuth, (req, res) => {
   try {
     const userId = req.currentUser.id;
     const { friendId } = req.body;
     if (!friendId || userId === friendId) return res.status(400).json({ error: "Invalid friend id." });
-    db.prepare("INSERT OR IGNORE INTO user_friends (user_id, friend_id) VALUES (?, ?)").run(userId, friendId);
+
+    const txn = db.transaction(() => {
+      db.prepare("INSERT OR IGNORE INTO user_friends (user_id, friend_id) VALUES (?, ?)").run(userId, friendId);
+      db.prepare("INSERT OR IGNORE INTO user_friends (user_id, friend_id) VALUES (?, ?)").run(friendId, userId);
+    });
+    txn();
     res.json({ success: true, is_friend: true });
   } catch (err) {
     console.error(err);
@@ -610,13 +754,18 @@ app.post("/api/friends", requireAuth, (req, res) => {
   }
 });
 
-// DELETE /api/friends - Remove a friend
+// DELETE /api/friends - Remove a friend for both users
 app.delete("/api/friends", requireAuth, (req, res) => {
   try {
     const userId = req.currentUser.id;
     const friendId = Number(req.query.friendId);
     if (!friendId) return res.status(400).json({ error: "friendId required." });
-    db.prepare("DELETE FROM user_friends WHERE user_id = ? AND friend_id = ?").run(userId, friendId);
+
+    const txn = db.transaction(() => {
+      db.prepare("DELETE FROM user_friends WHERE user_id = ? AND friend_id = ?").run(userId, friendId);
+      db.prepare("DELETE FROM user_friends WHERE user_id = ? AND friend_id = ?").run(friendId, userId);
+    });
+    txn();
     res.json({ success: true, is_friend: false });
   } catch (err) {
     console.error(err);

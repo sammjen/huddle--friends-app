@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
-import { Camera, X, Plus, Lock, User, MapPin, Mail, Sparkles, Shield, LogOut, CheckCircle2 } from "lucide-react";
+import { Camera, X, Plus, Lock, User, MapPin, Mail, Sparkles, Shield, LogOut, CheckCircle2, Users, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import AppHeader from "@/components/AppHeader";
 import { apiUrl } from "@/lib/api";
@@ -19,6 +19,24 @@ interface ProfileData {
   email: string;
   profile_photo: string;
   hobbies: string[];
+}
+
+interface FriendSummary {
+  id: number;
+  username: string;
+  display_name: string | null;
+  city: string | null;
+  profile_photo: string | null;
+}
+
+interface FriendRequestSummary {
+  id: number;
+  requester_id: number;
+  username: string;
+  display_name: string | null;
+  city: string | null;
+  profile_photo: string | null;
+  created_at: string;
 }
 
 const PERSONALITY_QUESTIONS = [
@@ -117,6 +135,10 @@ const Profile = () => {
   const [savingPassword, setSavingPassword] = useState(false);
 
   const [loading, setLoading] = useState(true);
+  const [friendRequests, setFriendRequests] = useState<FriendRequestSummary[]>([]);
+  const [friends, setFriends] = useState<FriendSummary[]>([]);
+  const [loadingFriends, setLoadingFriends] = useState(false);
+  const [friendActionId, setFriendActionId] = useState<number | null>(null);
 
   if (!isAuthenticated) return <Navigate to="/get-started" replace />;
 
@@ -153,12 +175,36 @@ const Profile = () => {
       .finally(() => setLoadingPersonality(false));
   }, [user?.id]);
 
-  const initials = (displayName || user?.username || "?")
+  useEffect(() => {
+    if (!user) return;
+    setLoadingFriends(true);
+    Promise.all([
+      fetch(apiUrl(`/api/friend-requests?userId=${user.id}`)).then((r) => r.json()),
+      fetch(apiUrl(`/api/friends/${user.id}?userId=${user.id}`)).then((r) => r.json()),
+    ])
+      .then(([requestsData, friendsData]) => {
+        setFriendRequests(Array.isArray(requestsData) ? requestsData : []);
+        setFriends(Array.isArray(friendsData) ? friendsData : []);
+      })
+      .catch(() => toast.error("Couldn't load friends."))
+      .finally(() => setLoadingFriends(false));
+  }, [user?.id]);
+
+  const ownerInitials = (displayName || user?.username || "?")
     .split(" ")
     .map((w) => w[0])
     .slice(0, 2)
     .join("")
     .toUpperCase();
+
+  const personInitials = (name: string | null, usernameFallback: string) => {
+    if (name) {
+      const parts = name.trim().split(" ").filter(Boolean);
+      if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    }
+    return usernameFallback.slice(0, 2).toUpperCase();
+  };
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -180,6 +226,68 @@ const Profile = () => {
   };
 
   const removeHobby = (idx: number) => setHobbies(hobbies.filter((_, i) => i !== idx));
+
+  const respondToFriendRequest = async (requesterId: number, action: "accept" | "decline") => {
+    if (!user) return;
+    setFriendActionId(requesterId);
+    const requestInfo = friendRequests.find((r) => r.requester_id === requesterId);
+    try {
+      const res = await fetch(apiUrl("/api/friend-requests/respond"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, requesterId, action }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update request.");
+
+      setFriendRequests((prev) => prev.filter((r) => r.requester_id !== requesterId));
+      if (action === "accept") {
+        if (requestInfo) {
+          setFriends((prev) =>
+            prev.some((f) => f.id === requesterId)
+              ? prev
+              : [
+                  ...prev,
+                  {
+                    id: requestInfo.requester_id,
+                    username: requestInfo.username,
+                    display_name: requestInfo.display_name,
+                    city: requestInfo.city,
+                    profile_photo: requestInfo.profile_photo,
+                  },
+                ]
+          );
+        }
+        toast.success("Friend request accepted");
+      } else {
+        toast.success("Request declined");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Couldn't update request.";
+      toast.error(msg);
+    } finally {
+      setFriendActionId(null);
+    }
+  };
+
+  const removeFriend = async (friendId: number) => {
+    if (!user) return;
+    setFriendActionId(friendId);
+    try {
+      const res = await fetch(apiUrl(`/api/friends?friendId=${friendId}&userId=${user.id}`), {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to remove friend.");
+      setFriends((prev) => prev.filter((f) => f.id !== friendId));
+      toast.success("Removed friend");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Couldn't remove friend.";
+      toast.error(msg);
+    } finally {
+      setFriendActionId(null);
+    }
+  };
 
   const saveProfile = async () => {
     if (!user) return;
@@ -360,7 +468,7 @@ const Profile = () => {
                 {profilePhoto ? (
                   <img src={profilePhoto} alt="avatar" className="w-full h-full object-cover rounded-full" />
                 ) : (
-                  <AvatarFallback className="bg-primary/10 text-primary text-xl font-bold">{initials}</AvatarFallback>
+                  <AvatarFallback className="bg-primary/10 text-primary text-xl font-bold">{ownerInitials}</AvatarFallback>
                 )}
               </Avatar>
               <button
@@ -421,6 +529,126 @@ const Profile = () => {
           </Button>
         </SectionCard>
 
+        {/* â”€â”€ Friends Card â”€â”€ */}
+        <SectionCard icon={Users} title="Friends">
+          <div className="space-y-5">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-foreground">Requests</p>
+                <span className="text-xs text-muted-foreground">
+                  {loadingFriends ? "Loading..." : `${friendRequests.length} pending`}
+                </span>
+              </div>
+              {loadingFriends ? (
+                <div className="space-y-2">
+                  {[1, 2].map((i) => (
+                    <div key={i} className="h-12 rounded-lg bg-secondary/60 animate-pulse" />
+                  ))}
+                </div>
+              ) : friendRequests.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">No friend requests right now.</p>
+              ) : (
+                <div className="space-y-2">
+                  {friendRequests.map((req) => (
+                    <div
+                      key={req.id}
+                      className="flex items-center gap-3 p-2.5 rounded-lg border border-border/60 bg-secondary/40"
+                    >
+                      <Avatar className="w-10 h-10">
+                        {req.profile_photo && <AvatarImage src={req.profile_photo} />}
+                        <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+                          {personInitials(req.display_name, req.username)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {req.display_name || req.username}
+                        </p>
+                        {req.city && <p className="text-[11px] text-muted-foreground truncate">{req.city}</p>}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          className="h-8 px-3 text-xs gap-1.5 rounded-lg"
+                          onClick={() => respondToFriendRequest(req.requester_id, "accept")}
+                          disabled={friendActionId === req.requester_id}
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          Accept
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-3 text-xs gap-1.5 rounded-lg"
+                          onClick={() => respondToFriendRequest(req.requester_id, "decline")}
+                          disabled={friendActionId === req.requester_id}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          Decline
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-border/60 pt-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-foreground">Your Friends</p>
+                <span className="text-xs text-muted-foreground">
+                  {loadingFriends ? "Loading..." : `${friends.length} total`}
+                </span>
+              </div>
+              {loadingFriends ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-12 rounded-lg bg-secondary/60 animate-pulse" />
+                  ))}
+                </div>
+              ) : friends.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">
+                  No friends yet. Send requests from the chat members sheet.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {friends.map((friend) => (
+                    <div
+                      key={friend.id}
+                      className="flex items-center gap-3 p-2.5 rounded-lg bg-secondary/30 border border-border/60"
+                    >
+                      <Avatar className="w-10 h-10">
+                        {friend.profile_photo && <AvatarImage src={friend.profile_photo} />}
+                        <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+                          {personInitials(friend.display_name, friend.username)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {friend.display_name || friend.username}
+                        </p>
+                        {friend.city && <p className="text-[11px] text-muted-foreground truncate">{friend.city}</p>}
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-3 text-xs text-destructive hover:text-destructive/80"
+                          onClick={() => removeFriend(friend.id)}
+                          disabled={friendActionId === friend.id}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* â”€â”€ Interests Card â”€â”€ */}
         {/* ── Personal Info Card ── */}
         <SectionCard icon={MapPin} title="Personal Info">
           <div className="space-y-4">
@@ -524,7 +752,7 @@ const Profile = () => {
           {!loadingPersonality && !personalityResults && (
             <>
               <p className="text-sm text-muted-foreground mb-4">
-                You haven't taken the personality test yet.
+                Take the personality test again.
               </p>
               <Button
                 onClick={() => navigate("/personality-test")}

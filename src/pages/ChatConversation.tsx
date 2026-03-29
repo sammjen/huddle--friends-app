@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useParams, Navigate } from "react-router-dom";
-import { ArrowLeft, Send, Pencil, X, MessageCircle, ChevronRight, UserPlus, UserCheck, Flag } from "lucide-react";
+import { ArrowLeft, Send, Pencil, X, MessageCircle, ChevronRight, UserPlus, UserCheck, Flag, Check, Clock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -32,13 +32,15 @@ interface Message {
   edited: boolean;
 }
 
+type FriendStatus = "friends" | "outgoing" | "incoming" | "none";
+
 interface Member {
   id: number;
   username: string;
   display_name: string | null;
   city: string | null;
   profile_photo: string | null;
-  is_friend: boolean;
+  friend_status: FriendStatus;
 }
 
 const CONVERSATION_STARTERS = [
@@ -62,6 +64,7 @@ const ChatConversation = () => {
   const [membersOpen, setMembersOpen] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [friendActionId, setFriendActionId] = useState<number | null>(null);
   const [reportTarget, setReportTarget] = useState<Member | null>(null);
   const [reportReason, setReportReason] = useState("");
   const [reportDescription, setReportDescription] = useState("");
@@ -113,29 +116,76 @@ const ChatConversation = () => {
     setMembersLoading(true);
     fetch(apiUrl(`/api/groupchats/${groupId}/members?userId=${user.id}`))
       .then((res) => res.json())
-      .then((data) => setMembers(Array.isArray(data) ? data : []))
+      .then((data) =>
+        setMembers(
+          Array.isArray(data)
+            ? data.map((m) => ({
+                ...m,
+                friend_status: m.friend_status || (m.is_friend ? "friends" : "none"),
+              }))
+            : []
+        )
+      )
       .catch(() => toast.error("Couldn't load members."))
       .finally(() => setMembersLoading(false));
   }, [membersOpen, groupId, user]);
 
-  const toggleFriend = async (memberId: number, currentlyFriend: boolean) => {
+  const updateMemberStatus = (memberId: number, status: FriendStatus) => {
+    setMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, friend_status: status } : m)));
+  };
+
+  const sendFriendRequest = async (memberId: number) => {
     if (!user) return;
+    setFriendActionId(memberId);
     try {
-      if (currentlyFriend) {
-        await fetch(apiUrl(`/api/friends?friendId=${memberId}&userId=${user.id}`), { method: "DELETE" });
-      } else {
-        await fetch(apiUrl("/api/friends"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: user.id, friendId: memberId }),
-        });
+      const res = await fetch(apiUrl("/api/friend-requests"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, receiverId: memberId }),
+      });
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        if (!res.ok) throw new Error("Server error");
       }
-      setMembers((prev) =>
-        prev.map((m) => (m.id === memberId ? { ...m, is_friend: !currentlyFriend } : m))
-      );
-      toast.success(currentlyFriend ? "Removed friend" : "Added friend!");
-    } catch {
-      toast.error("Failed to update friend.");
+      if (!res.ok) throw new Error(data.error || "Failed");
+      const status: FriendStatus = data.status === "friends" ? "friends" : "outgoing";
+      updateMemberStatus(memberId, status);
+      toast.success(status === "friends" ? "You're now friends!" : "Request sent");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to send request.";
+      toast.error(msg);
+    } finally {
+      setFriendActionId(null);
+    }
+  };
+
+  const respondToRequest = async (memberId: number, action: "accept" | "decline") => {
+    if (!user) return;
+    setFriendActionId(memberId);
+    try {
+      const res = await fetch(apiUrl("/api/friend-requests/respond"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, requesterId: memberId, action }),
+      });
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        if (!res.ok) throw new Error("Server error");
+      }
+      if (!res.ok) throw new Error(data.error || "Failed");
+      updateMemberStatus(memberId, action === "accept" ? "friends" : "none");
+      toast.success(action === "accept" ? "Friend request accepted" : "Request declined");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to update request.";
+      toast.error(msg);
+    } finally {
+      setFriendActionId(null);
     }
   };
 
@@ -342,24 +392,64 @@ const ChatConversation = () => {
                       </div>
                       {!isMe && (
                         <div className="flex items-center gap-1.5 flex-shrink-0">
-                          <Button
-                            variant={member.is_friend ? "secondary" : "default"}
-                            size="sm"
-                            className="h-8 px-3 text-xs gap-1.5 rounded-lg"
-                            onClick={() => toggleFriend(member.id, member.is_friend)}
-                          >
-                            {member.is_friend ? (
-                              <>
-                                <UserCheck className="w-3.5 h-3.5" />
-                                Friends
-                              </>
-                            ) : (
-                              <>
-                                <UserPlus className="w-3.5 h-3.5" />
-                                Add
-                              </>
-                            )}
-                          </Button>
+                          {member.friend_status === "friends" && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="h-8 px-3 text-xs gap-1.5 rounded-lg"
+                              disabled
+                            >
+                              <UserCheck className="w-3.5 h-3.5" />
+                              Friends
+                            </Button>
+                          )}
+                          {member.friend_status === "outgoing" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-3 text-xs gap-1.5 rounded-lg"
+                              disabled
+                            >
+                              <Clock className="w-3.5 h-3.5" />
+                              Pending
+                            </Button>
+                          )}
+                          {member.friend_status === "incoming" && (
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="default"
+                                size="sm"
+                                className="h-8 px-3 text-xs gap-1.5 rounded-lg"
+                                onClick={() => respondToRequest(member.id, "accept")}
+                                disabled={friendActionId === member.id}
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                Accept
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 px-3 text-xs gap-1.5 rounded-lg"
+                                onClick={() => respondToRequest(member.id, "decline")}
+                                disabled={friendActionId === member.id}
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                Decline
+                              </Button>
+                            </div>
+                          )}
+                          {member.friend_status === "none" && (
+                            <Button
+                              variant="default"
+                              size="sm"
+                              className="h-8 px-3 text-xs gap-1.5 rounded-lg"
+                              onClick={() => sendFriendRequest(member.id)}
+                              disabled={friendActionId === member.id}
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                              Add
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"
