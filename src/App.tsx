@@ -14,31 +14,33 @@ import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import Admin from "./pages/Admin";
 import Events from "./pages/Events";
+import AccountDeactivated from "./pages/AccountDeactivated";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
-      <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/get-started" element={<GetStarted />} />
-            <Route path="/personality-test" element={<PersonalityTest />} />
-            <Route path="/chats" element={<ChatList />} />
-            <Route path="/chat/:groupId" element={<ChatConversation />} />
-            <Route path="/events" element={<Events />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/admin" element={<Admin />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-      </AuthProvider>
+      <BrowserRouter>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/get-started" element={<GetStarted />} />
+              <Route path="/account-deactivated" element={<AccountDeactivated />} />
+              <Route path="/personality-test" element={<PersonalityTest />} />
+              <Route path="/chats" element={<ChatList />} />
+              <Route path="/chat/:groupId" element={<ChatConversation />} />
+              <Route path="/events" element={<Events />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/admin" element={<Admin />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </TooltipProvider>
+        </AuthProvider>
+      </BrowserRouter>
     </ThemeProvider>
   </QueryClientProvider>
 );

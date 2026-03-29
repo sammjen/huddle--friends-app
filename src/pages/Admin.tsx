@@ -6,7 +6,8 @@ import { apiUrl } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Users, MessageSquare, LayoutDashboard, Shield, FlaskConical, RefreshCw, Flag, AlertTriangle } from "lucide-react";
+import { Users, MessageSquare, LayoutDashboard, Shield, FlaskConical, RefreshCw, Flag, AlertTriangle, Inbox } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Stats {
   users: number;
@@ -15,6 +16,21 @@ interface Stats {
   groupchats: number;
   personalityTests: number;
   pendingReports: number;
+  pendingAppeals: number;
+}
+
+interface AppealRow {
+  id: number;
+  user_id: number;
+  message: string;
+  status: "pending" | "approved" | "rejected";
+  admin_note: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  username: string | null;
+  display_name: string | null;
+  email: string | null;
+  active: number;
 }
 
 interface ReportRow {
@@ -71,9 +87,11 @@ const Admin = () => {
   const [groupchats, setGroupchats] = useState<GroupchatRow[]>([]);
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [reports, setReports] = useState<ReportRow[]>([]);
+  const [appeals, setAppeals] = useState<AppealRow[]>([]);
+  const [appealNotes, setAppealNotes] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "users" | "chats" | "messages" | "reports">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "users" | "chats" | "messages" | "reports" | "appeals">("overview");
 
   useEffect(() => {
     if (!user) { navigate("/get-started"); return; }
@@ -82,23 +100,62 @@ const Admin = () => {
 
   const fetchAll = async () => {
     if (!user) return;
+    const uid = Number(user.id);
+    if (!Number.isInteger(uid)) {
+      setError("Invalid session. Please log out and sign in again.");
+      return;
+    }
     setLoading(true);
     setError(null);
+    const q = `userId=${uid}`;
+    const parse = async (resPromise: Promise<Response>, label: string) => {
+      const res = await resPromise;
+      let body: unknown = null;
+      try {
+        body = await res.json();
+      } catch {
+        throw new Error(`${label}: server returned non-JSON (${res.status}). Is the API URL correct?`);
+      }
+      if (!res.ok) {
+        const msg = typeof body === "object" && body !== null && "error" in body
+          ? String((body as { error: string }).error)
+          : res.statusText;
+        throw new Error(`${label}: ${msg}`);
+      }
+      return body;
+    };
     try {
-      const [s, u, g, m, rp] = await Promise.all([
-        fetch(apiUrl(`/api/admin/stats?userId=${user.id}`)).then((r) => r.json()),
-        fetch(apiUrl(`/api/admin/users?userId=${user.id}`)).then((r) => r.json()),
-        fetch(apiUrl(`/api/admin/groupchats?userId=${user.id}`)).then((r) => r.json()),
-        fetch(apiUrl(`/api/admin/messages?userId=${user.id}&limit=50`)).then((r) => r.json()),
-        fetch(apiUrl(`/api/admin/reports?userId=${user.id}`)).then((r) => r.json()),
+      const settled = await Promise.allSettled([
+        parse(fetch(apiUrl(`/api/admin/stats?${q}`)), "Stats"),
+        parse(fetch(apiUrl(`/api/admin/users?${q}`)), "Users"),
+        parse(fetch(apiUrl(`/api/admin/groupchats?${q}`)), "Group chats"),
+        parse(fetch(apiUrl(`/api/admin/messages?${q}&limit=50`)), "Messages"),
+        parse(fetch(apiUrl(`/api/admin/reports?${q}`)), "Reports"),
+        parse(fetch(apiUrl(`/api/admin/appeals?${q}`)), "Appeals"),
       ]);
-      setStats(s);
-      setUsers(u);
-      setGroupchats(g);
-      setMessages(m);
-      setReports(Array.isArray(rp) ? rp : []);
-    } catch {
-      setError("Failed to load admin data. Is the server running?");
+      const errs: string[] = [];
+      const val = <T,>(i: number, fallback: T, isValid: (x: unknown) => x is T): T => {
+        const r = settled[i];
+        if (r.status === "rejected") {
+          errs.push(r.reason instanceof Error ? r.reason.message : String(r.reason));
+          return fallback;
+        }
+        const data = r.value;
+        if (!isValid(data)) {
+          errs.push(`Unexpected response for index ${i}`);
+          return fallback;
+        }
+        return data;
+      };
+      setStats(val(0, null, (x): x is Stats => x !== null && typeof x === "object" && "users" in x));
+      setUsers(val(1, [], Array.isArray));
+      setGroupchats(val(2, [], Array.isArray));
+      setMessages(val(3, [], Array.isArray));
+      setReports(val(4, [], Array.isArray));
+      setAppeals(val(5, [], Array.isArray));
+      if (errs.length) setError(errs.join(" "));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load admin data. Is the server running?");
     } finally {
       setLoading(false);
     }
@@ -145,9 +202,41 @@ const Admin = () => {
     setReports((prev) => prev.filter((r) => r.id !== reportId));
   };
 
+  const resolveAppeal = async (appealId: number, status: "approved" | "rejected") => {
+    if (!user) return;
+    const targetUserId = appeals.find((a) => a.id === appealId)?.user_id;
+    const adminNote = appealNotes[appealId]?.trim() || undefined;
+    const res = await fetch(apiUrl(`/api/admin/appeals/${appealId}`), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: user.id, status, adminNote }),
+    });
+    if (!res.ok) return;
+    setAppeals((prev) => {
+      const next = prev.map((a) =>
+        a.id === appealId
+          ? {
+              ...a,
+              status,
+              admin_note: adminNote ?? a.admin_note,
+              resolved_at: new Date().toISOString(),
+              active: status === "approved" ? 1 : a.active,
+            }
+          : a
+      );
+      const pending = next.filter((a) => a.status === "pending").length;
+      setStats((s) => (s ? { ...s, pendingAppeals: pending } : s));
+      return next;
+    });
+    if (status === "approved" && targetUserId != null) {
+      setUsers((prev) => prev.map((u) => (u.id === targetUserId ? { ...u, active: 1 } : u)));
+    }
+  };
+
   if (!user || user.role !== "admin") return null;
 
   const pendingCount = reports.filter((r) => r.status === "pending").length;
+  const pendingAppealCount = appeals.filter((a) => a.status === "pending").length;
 
   const tabs = [
     { key: "overview", label: "Overview", icon: LayoutDashboard },
@@ -155,6 +244,7 @@ const Admin = () => {
     { key: "chats", label: "Group Chats", icon: MessageSquare },
     { key: "messages", label: "Messages", icon: MessageSquare },
     { key: "reports", label: `Reports${pendingCount > 0 ? ` (${pendingCount})` : ""}`, icon: Flag },
+    { key: "appeals", label: `Appeals${pendingAppealCount > 0 ? ` (${pendingAppealCount})` : ""}`, icon: Inbox },
   ] as const;
 
   return (
@@ -202,7 +292,7 @@ const Admin = () => {
 
         {/* Overview Tab */}
         {activeTab === "overview" && (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {[
               { label: "Total Users", value: stats?.users, icon: Users, color: "text-blue-500" },
               { label: "Admins", value: stats?.admins, icon: Shield, color: "text-purple-500" },
@@ -210,6 +300,7 @@ const Admin = () => {
               { label: "Messages", value: stats?.messages, icon: MessageSquare, color: "text-orange-500" },
               { label: "Personality Tests", value: stats?.personalityTests, icon: FlaskConical, color: "text-pink-500" },
               { label: "Pending Reports", value: stats?.pendingReports, icon: AlertTriangle, color: "text-red-500" },
+              { label: "Pending Appeals", value: stats?.pendingAppeals, icon: Inbox, color: "text-amber-600" },
             ].map(({ label, value, icon: Icon, color }) => (
               <Card key={label}>
                 <CardHeader className="pb-2">
@@ -468,6 +559,99 @@ const Admin = () => {
                         </>
                       )}
                     </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* Appeals Tab */}
+        {activeTab === "appeals" && (
+          <div className="space-y-4">
+            {appeals.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
+                    <Inbox className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <p className="text-sm font-medium text-foreground">No appeals yet</p>
+                  <p className="text-xs text-muted-foreground mt-1">Deactivated users can submit a reactivation request from the account-deactivated page.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              appeals.map((a) => (
+                <Card key={a.id} className={a.status === "pending" ? "border-amber-500/30" : ""}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-9 h-9 rounded-full flex items-center justify-center ${
+                            a.status === "pending" ? "bg-amber-500/10" : "bg-muted"
+                          }`}
+                        >
+                          <Inbox className={`h-4 w-4 ${a.status === "pending" ? "text-amber-600" : "text-muted-foreground"}`} />
+                        </div>
+                        <div>
+                          <CardTitle className="text-sm">
+                            {a.display_name || a.username || "User"} <span className="text-muted-foreground font-normal">@{a.username}</span>
+                          </CardTitle>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {a.email || "No email"} · Submitted{" "}
+                            {new Date(a.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                      <Badge
+                        variant={
+                          a.status === "pending"
+                            ? "default"
+                            : a.status === "approved"
+                              ? "default"
+                              : "secondary"
+                        }
+                      >
+                        {a.status}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-0 space-y-3">
+                    <p className="text-sm text-foreground bg-secondary/50 rounded-lg p-3 whitespace-pre-wrap">{a.message}</p>
+                    {a.admin_note && (
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">Admin note:</span> {a.admin_note}
+                      </p>
+                    )}
+                    {a.status === "pending" && (
+                      <>
+                        <Textarea
+                          placeholder="Optional note to the user (stored with the decision)"
+                          value={appealNotes[a.id] ?? ""}
+                          onChange={(e) =>
+                            setAppealNotes((prev) => ({ ...prev, [a.id]: e.target.value }))
+                          }
+                          className="min-h-[72px] text-sm resize-y"
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="text-xs h-8"
+                            onClick={() => resolveAppeal(a.id, "approved")}
+                          >
+                            Approve — Reactivate account
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-xs h-8"
+                            onClick={() => resolveAppeal(a.id, "rejected")}
+                          >
+                            Reject appeal
+                          </Button>
+                        </div>
+                      </>
+                    )}
                   </CardContent>
                 </Card>
               ))
