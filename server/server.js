@@ -1557,7 +1557,7 @@ startCronJob();
 // ---------------------------------------------------------------------------
 // POST /api/match — manual trigger (admin)
 // ---------------------------------------------------------------------------
-app.post("/api/match", (req, res) => {
+app.post("/api/match", requireAdmin, (req, res) => {
   try {
     const result = runMatchAlgorithm();
     if (!result.success) {

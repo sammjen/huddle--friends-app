@@ -26,16 +26,24 @@ const AppHeader = () => {
 
   return (
     <header className="sticky top-0 z-50 grid grid-cols-[1fr_auto_1fr] items-center px-4 md:px-8 py-3 bg-background/80 backdrop-blur-sm border-b border-border">
+      {/* Skip to main content — accessibility */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[60] focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-lg focus:text-sm focus:font-medium"
+      >
+        Skip to main content
+      </a>
       {/* Logo */}
       <button
         onClick={() => navigate("/")}
+        aria-label="Huddle home"
         className="justify-self-start text-xl font-bold tracking-tight text-foreground min-h-[44px] flex items-center"
       >
         <span className="text-primary">H</span>uddle
       </button>
 
       {/* Desktop Nav (centered) */}
-      <nav className="hidden md:flex items-center gap-1 justify-center">
+      <nav aria-label="Main navigation" className="hidden md:flex items-center gap-1 justify-center">
         {NAV_ITEMS.map((item) => (
           <button
             key={item.path}
@@ -114,7 +122,7 @@ const AppHeader = () => {
         {/* Mobile Hamburger */}
         <Sheet>
           <SheetTrigger asChild>
-            <button className="md:hidden w-10 h-10 rounded-full bg-secondary border border-border flex items-center justify-center hover:bg-secondary/80 transition-colors touch-manipulation">
+            <button aria-label="Open menu" className="md:hidden w-10 h-10 rounded-full bg-secondary border border-border flex items-center justify-center hover:bg-secondary/80 transition-colors touch-manipulation">
               <Menu className="h-5 w-5 text-foreground" />
             </button>
           </SheetTrigger>

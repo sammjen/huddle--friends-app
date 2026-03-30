@@ -401,12 +401,13 @@ const ChatConversation = () => {
 
   const initials = (name: string | null, username: string) => {
     if (name) {
-      const parts = name.split(" ");
-      return parts.length > 1
-        ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-        : name.slice(0, 2).toUpperCase();
+      const parts = name.split(" ").filter(Boolean);
+      if (parts.length > 1) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      }
+      return name.slice(0, 2).toUpperCase();
     }
-    return username.slice(0, 2).toUpperCase();
+    return (username || "??").slice(0, 2).toUpperCase();
   };
 
   return (
@@ -609,7 +610,7 @@ const ChatConversation = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Flag className="h-4 w-4 text-destructive" />
-              Report {reportTarget?.display_name || reportTarget?.username}
+              Report {reportTarget?.display_name || reportTarget?.username || "User"}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">

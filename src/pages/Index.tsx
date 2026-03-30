@@ -85,7 +85,7 @@ const Index = () => {
       <AppHeader />
 
       {/* Hero */}
-      <section className="relative flex flex-col items-center justify-center px-4 sm:px-6 pt-16 sm:pt-24 pb-12 sm:pb-16 text-center overflow-hidden">
+      <section id="main-content" className="relative flex flex-col items-center justify-center px-4 sm:px-6 pt-16 sm:pt-24 pb-12 sm:pb-16 text-center overflow-hidden">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[250px] h-[250px] sm:w-[400px] sm:h-[400px] md:w-[500px] md:h-[500px] bg-primary/15 rounded-full blur-[80px] sm:blur-[100px] pointer-events-none" />
         <h1 className="text-5xl sm:text-6xl md:text-8xl font-black text-foreground leading-none tracking-tight animate-fade-in relative">
           Huddle
@@ -260,7 +260,7 @@ const Index = () => {
                     <p className="text-foreground text-xs sm:text-sm leading-relaxed">"{r.quote}"</p>
                     <div className="flex items-center gap-2 sm:gap-3 pt-1">
                       <Avatar className="w-8 h-8 sm:w-9 sm:h-9">
-                        <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">{r.name[0]}</AvatarFallback>
+                        <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">{r.name?.charAt(0) || "?"}</AvatarFallback>
                       </Avatar>
                       <div>
                         <p className="text-xs sm:text-sm font-semibold text-foreground">{r.name}</p>

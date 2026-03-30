@@ -137,7 +137,7 @@ const ChatList = () => {
       <AppHeader />
 
       {!isAuthenticated ? (
-        <div className="flex-1 flex items-center justify-center px-4 py-12 sm:py-16">
+        <div id="main-content" className="flex-1 flex items-center justify-center px-4 py-12 sm:py-16">
           <div className="bg-card rounded-2xl p-6 sm:p-8 max-w-sm w-full shadow-lg text-center space-y-5 sm:space-y-6">
             <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-primary/15 flex items-center justify-center mx-auto">
               <MessageCircle className="w-7 h-7 sm:w-8 sm:h-8 text-primary" />

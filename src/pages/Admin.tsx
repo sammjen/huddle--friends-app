@@ -198,6 +198,12 @@ const Admin = () => {
 
   useEffect(() => { fetchAll(); }, [user]);
 
+  // Auto-refresh stats every 30 seconds (OKR: metric updated automatically)
+  useEffect(() => {
+    const interval = setInterval(() => { fetchAll(); }, 30_000);
+    return () => clearInterval(interval);
+  }, [user]);
+
   const fetchSchedule = async () => {
     try {
       const res = await fetch(apiUrl("/api/cron-schedule"));
@@ -302,7 +308,7 @@ const Admin = () => {
   return (
     <div className="min-h-screen bg-background">
       <AppHeader />
-      <main className="max-w-6xl mx-auto px-4 md:px-8 py-8">
+      <main id="main-content" className="max-w-6xl mx-auto px-4 md:px-8 py-8">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
@@ -346,13 +352,13 @@ const Admin = () => {
         {activeTab === "overview" && (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {[
-              { label: "Total Users", value: users.length || stats?.users, icon: Users, color: "text-blue-500" },
-              { label: "Admins", value: users.filter((u) => u.role === "admin").length || stats?.admins, icon: Shield, color: "text-purple-500" },
-              { label: "Group Chats", value: groupchats.length || stats?.groupchats, icon: LayoutDashboard, color: "text-green-500" },
-              { label: "Messages", value: messages.length || stats?.messages, icon: MessageSquare, color: "text-orange-500" },
+              { label: "Total Users", value: stats?.users ?? users.length, icon: Users, color: "text-blue-500" },
+              { label: "Admins", value: stats?.admins ?? users.filter((u) => u.role === "admin").length, icon: Shield, color: "text-purple-500" },
+              { label: "Group Chats", value: stats?.groupchats ?? groupchats.length, icon: LayoutDashboard, color: "text-green-500" },
+              { label: "Messages", value: stats?.messages ?? messages.length, icon: MessageSquare, color: "text-orange-500" },
               { label: "Personality Tests", value: stats?.personalityTests, icon: FlaskConical, color: "text-pink-500" },
-              { label: "Pending Reports", value: reports.filter((r) => r.status === "pending").length || stats?.pendingReports, icon: AlertTriangle, color: "text-red-500" },
-              { label: "Pending Appeals", value: appeals.filter((a) => a.status === "pending").length || stats?.pendingAppeals, icon: Inbox, color: "text-amber-600" },
+              { label: "Pending Reports", value: stats?.pendingReports ?? reports.filter((r) => r.status === "pending").length, icon: AlertTriangle, color: "text-red-500" },
+              { label: "Pending Appeals", value: stats?.pendingAppeals ?? appeals.filter((a) => a.status === "pending").length, icon: Inbox, color: "text-amber-600" },
             ].map(({ label, value, icon: Icon, color }) => (
               <Card key={label}>
                 <CardHeader className="pb-2">

@@ -275,7 +275,7 @@ const Events = () => {
           </div>
         </div>
       ) : (
-        <main className="flex-1 px-4 md:px-8 py-6 max-w-5xl mx-auto w-full">
+        <main id="main-content" className="flex-1 px-4 md:px-8 py-6 max-w-5xl mx-auto w-full">
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <Badge variant="secondary" className="mb-3 bg-primary/10 text-primary border-0">
