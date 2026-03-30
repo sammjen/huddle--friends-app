@@ -963,6 +963,9 @@ app.post("/api/messages", requireAuth, (req, res) => {
     if (!groupId || !message) {
       return res.status(400).json({ error: "groupId and message are required." });
     }
+    if (message.length > 5000) {
+      return res.status(400).json({ error: "Message is too long (max 5000 characters)." });
+    }
     const result = db
       .prepare("INSERT INTO message (user_id, groupchat_id, message) VALUES (?, ?, ?)")
       .run(userId || null, groupId, message);
@@ -987,6 +990,9 @@ app.put("/api/messages/:id", requireAuth, (req, res) => {
     const { userId, message } = req.body;
     if (!message || !message.trim()) {
       return res.status(400).json({ error: "Message text is required." });
+    }
+    if (message.length > 5000) {
+      return res.status(400).json({ error: "Message is too long (max 5000 characters)." });
     }
     const existing = db.prepare("SELECT user_id FROM message WHERE id = ?").get(id);
     if (!existing) return res.status(404).json({ error: "Message not found." });
@@ -1050,6 +1056,10 @@ app.put("/api/profile/:userId", requireAuth, (req, res) => {
   try {
     const { userId } = req.params;
     const { display_name, bio, city, email, profile_photo, hobbies } = req.body;
+    if (display_name && display_name.length > 100) return res.status(400).json({ error: "Display name too long (max 100)." });
+    if (bio && bio.length > 500) return res.status(400).json({ error: "Bio too long (max 500)." });
+    if (email && email.length > 254) return res.status(400).json({ error: "Email too long." });
+    if (Array.isArray(hobbies) && hobbies.length > 15) return res.status(400).json({ error: "Too many hobbies (max 15)." });
     db.prepare(
       `UPDATE user SET display_name = ?, bio = ?, city = ?, email = ?, profile_photo = ?, hobbies = ? WHERE id = ?`
     ).run(

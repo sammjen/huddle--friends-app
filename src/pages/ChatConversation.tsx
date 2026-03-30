@@ -113,11 +113,39 @@ const ChatConversation = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Tick every second so the delete button disappears in real-time after 1 minute
+  // Poll for new messages every 5 seconds
   useEffect(() => {
+    if (!groupId || !user) return;
+    const poll = setInterval(() => {
+      fetch(apiUrl(`/api/messages/${groupId}`))
+        .then((res) => res.json())
+        .then((data: { id: number; message: string; sent_time: string; user_id: number | null; username: string | null; edited: number }[]) => {
+          if (!Array.isArray(data)) return;
+          setMessages((prev) => {
+            if (data.length === prev.length) return prev;
+            return data.map((m) => ({
+              id: String(m.id),
+              sender: m.username || "Unknown",
+              text: m.message,
+              isMe: m.user_id === user?.id,
+              time: new Date(m.sent_time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+              edited: m.edited === 1,
+              sentAt: new Date(m.sent_time.replace(" ", "T") + "Z").getTime(),
+            }));
+          });
+        })
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(poll);
+  }, [groupId, user]);
+
+  // Only tick while there are own messages within the 60s delete window
+  useEffect(() => {
+    const hasRecentOwn = messages.some((m) => m.isMe && Date.now() - m.sentAt < 60_000);
+    if (!hasRecentOwn) return;
     const id = setInterval(() => setTicker(Date.now()), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [messages, ticker]);
 
   const canDelete = (msg: Message) => ticker - msg.sentAt < 60 * 1000;
 
@@ -184,7 +212,7 @@ const ChatConversation = () => {
         body: JSON.stringify({ userId: user.id, receiverId: memberId }),
       });
       const text = await res.text();
-      let data: any = {};
+      let data: { success?: boolean; status?: string; error?: string } = {};
       try {
         data = text ? JSON.parse(text) : {};
       } catch {
@@ -212,7 +240,7 @@ const ChatConversation = () => {
         body: JSON.stringify({ userId: user.id, requesterId: memberId, action }),
       });
       const text = await res.text();
-      let data: any = {};
+      let data: { success?: boolean; status?: string; error?: string } = {};
       try {
         data = text ? JSON.parse(text) : {};
       } catch {
