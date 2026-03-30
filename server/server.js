@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import Database from "better-sqlite3";
 import bcrypt from "bcryptjs";
+import cron from "node-cron";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
@@ -76,6 +77,16 @@ const indexes = [
 for (const sql of indexes) {
   try { db.exec(sql); } catch (_) { /* index or table may not exist yet */ }
 }
+
+// Cron schedule settings (defaults to midnight)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cron_settings (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    hour INTEGER NOT NULL DEFAULT 0,
+    minute INTEGER NOT NULL DEFAULT 0
+  );
+  INSERT OR IGNORE INTO cron_settings (id, hour, minute) VALUES (1, 0, 0);
+`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS events (
@@ -1381,158 +1392,216 @@ app.put("/api/admin/appeals/:id", requireAdmin, (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/match — personality-based matching algorithm
+// Daily matching — shared algorithm
+// ---------------------------------------------------------------------------
+
+function runMatchAlgorithm() {
+  const GROUP_SIZE = 5;
+
+  // 1. Users who completed the full 10-question quiz, excluding admins
+  const completedUsers = db
+    .prepare(`
+      SELECT uha.user_id
+      FROM user_hobby_answers uha
+      JOIN user u ON u.id = uha.user_id
+      WHERE u.role != 'admin' AND u.active = 1
+      GROUP BY uha.user_id
+      HAVING COUNT(*) = 10
+    `)
+    .all()
+    .map((r) => r.user_id);
+
+  if (completedUsers.length < 2) {
+    return { success: false, error: "Not enough users with completed quizzes.", groups: [] };
+  }
+
+  // 2. Build answer vectors  userId → [A–E × 10]
+  const userAnswers = {};
+  const stmtAnswers = db.prepare(`
+    SELECT q.question_number, uha.answer
+    FROM user_hobby_answers uha
+    JOIN questions q ON uha.question_id = q.id
+    WHERE uha.user_id = ?
+    ORDER BY q.question_number
+  `);
+  for (const uid of completedUsers) {
+    userAnswers[uid] = stmtAnswers.all(uid).map((a) => a.answer);
+  }
+
+  // 3. Greedy similarity clustering
+  const ungrouped = new Set(completedUsers);
+  const groups = [];
+
+  const shuffled = [...ungrouped].sort(() => Math.random() - 0.5);
+
+  while (shuffled.filter((u) => ungrouped.has(u)).length >= GROUP_SIZE) {
+    const pivot = shuffled.find((u) => ungrouped.has(u));
+    if (pivot === undefined) break;
+
+    const scored = [...ungrouped]
+      .filter((u) => u !== pivot)
+      .map((uid) => ({
+        uid,
+        score: userAnswers[pivot].reduce(
+          (sum, ans, i) => sum + (ans === userAnswers[uid][i] ? 1 : 0),
+          0
+        ),
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    const members = [pivot, ...scored.slice(0, GROUP_SIZE - 1).map((s) => s.uid)];
+    groups.push(members);
+    members.forEach((u) => ungrouped.delete(u));
+  }
+
+  // Distribute leftovers into closest group
+  for (const uid of ungrouped) {
+    let best = 0;
+    let bestScore = -1;
+    for (let g = 0; g < groups.length; g++) {
+      const avg =
+        groups[g].reduce(
+          (s, m) =>
+            s + userAnswers[uid].reduce((t, a, i) => t + (a === userAnswers[m][i] ? 1 : 0), 0),
+          0
+        ) / groups[g].length;
+      if (avg > bestScore) {
+        bestScore = avg;
+        best = g;
+      }
+    }
+    groups[best].push(uid);
+  }
+
+  // 4. Derive group name from dominant answers on Q1 (creative) & Q3 (entertainment)
+  const ADJ = { A: "Artsy", B: "Literary", C: "Musical", D: "Maker", E: "Creative" };
+  const NOUN = { A: "Gamers", B: "Film Buffs", C: "Bookworms", D: "Podcasters", E: "Explorers" };
+  const EMOJI = { A: "🎨", B: "✍️", C: "🎵", D: "🔧", E: "✨" };
+
+  function nameForGroup(memberIds) {
+    const q1 = {}, q3 = {};
+    for (const uid of memberIds) {
+      const a = userAnswers[uid];
+      q1[a[0]] = (q1[a[0]] || 0) + 1;
+      q3[a[2]] = (q3[a[2]] || 0) + 1;
+    }
+    const topQ1 = Object.entries(q1).sort((a, b) => b[1] - a[1])[0][0];
+    const topQ3 = Object.entries(q3).sort((a, b) => b[1] - a[1])[0][0];
+    return { name: `${ADJ[topQ1]} ${NOUN[topQ3]}`, emoji: EMOJI[topQ1] };
+  }
+
+  // 5. Persist: create new groups (old chats persist — no deactivation)
+  const created = db.transaction(() => {
+    const insGroup = db.prepare("INSERT INTO groupchat (name, chat_photo, active) VALUES (?, ?, 1)");
+    const insMember = db.prepare("INSERT OR IGNORE INTO user_groupchat (user_id, groupchat_id) VALUES (?, ?)");
+
+    const out = [];
+    const usedNames = new Set();
+
+    for (const members of groups) {
+      let { name, emoji } = nameForGroup(members);
+      let unique = name;
+      let n = 2;
+      while (usedNames.has(unique)) { unique = `${name} ${n++}`; }
+      usedNames.add(unique);
+
+      const r = insGroup.run(unique, emoji);
+      const gid = Number(r.lastInsertRowid);
+      for (const uid of members) insMember.run(uid, gid);
+      out.push({ id: gid, name: unique, emoji, memberCount: members.length });
+    }
+    return out;
+  })();
+
+  return { success: true, groups: created, totalUsers: completedUsers.length };
+}
+
+// ---------------------------------------------------------------------------
+// Cron scheduler
+// ---------------------------------------------------------------------------
+
+function getCronSettings() {
+  return db.prepare("SELECT hour, minute FROM cron_settings WHERE id = 1").get() || { hour: 0, minute: 0 };
+}
+
+function getNextRunAt(hour, minute) {
+  const now = new Date();
+  const next = new Date();
+  next.setHours(hour, minute, 0, 0);
+  if (next <= now) next.setDate(next.getDate() + 1);
+  return next.toISOString();
+}
+
+let currentCronTask = null;
+
+function startCronJob() {
+  const { hour, minute } = getCronSettings();
+  if (currentCronTask) {
+    currentCronTask.stop();
+    currentCronTask = null;
+  }
+  currentCronTask = cron.schedule(`${minute} ${hour} * * *`, () => {
+    console.log(`[cron] Running daily personality match at ${hour}:${String(minute).padStart(2, "0")}`);
+    try {
+      const result = runMatchAlgorithm();
+      console.log(`[cron] Match complete — ${result.groups?.length ?? 0} groups created`);
+    } catch (err) {
+      console.error("[cron] Match failed:", err);
+    }
+  });
+  console.log(`[cron] Daily match scheduled for ${hour}:${String(minute).padStart(2, "0")} every day`);
+}
+
+startCronJob();
+
+// ---------------------------------------------------------------------------
+// POST /api/match — manual trigger (admin)
 // ---------------------------------------------------------------------------
 app.post("/api/match", (req, res) => {
   try {
-    const GROUP_SIZE = 5;
-
-    // 1. Users who completed the full 10-question quiz
-    const completedUsers = db
-      .prepare("SELECT user_id FROM user_hobby_answers GROUP BY user_id HAVING COUNT(*) = 10")
-      .all()
-      .map((r) => r.user_id);
-
-    if (completedUsers.length < 2) {
-      return res.status(400).json({ error: "Not enough users with completed quizzes." });
+    const result = runMatchAlgorithm();
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
     }
-
-    // 2. Build answer vectors  userId → [A–E × 10]
-    const userAnswers = {};
-    const stmtAnswers = db.prepare(`
-      SELECT q.question_number, uha.answer
-      FROM user_hobby_answers uha
-      JOIN questions q ON uha.question_id = q.id
-      WHERE uha.user_id = ?
-      ORDER BY q.question_number
-    `);
-    for (const uid of completedUsers) {
-      userAnswers[uid] = stmtAnswers.all(uid).map((a) => a.answer);
-    }
-
-    // 3. Greedy similarity clustering
-    const ungrouped = new Set(completedUsers);
-    const groups = [];
-
-    // Shuffle for variety across runs
-    const shuffled = [...ungrouped].sort(() => Math.random() - 0.5);
-
-    while (shuffled.filter((u) => ungrouped.has(u)).length >= GROUP_SIZE) {
-      const pivot = shuffled.find((u) => ungrouped.has(u));
-      if (pivot === undefined) break;
-
-      const scored = [...ungrouped]
-        .filter((u) => u !== pivot)
-        .map((uid) => ({
-          uid,
-          score: userAnswers[pivot].reduce(
-            (sum, ans, i) => sum + (ans === userAnswers[uid][i] ? 1 : 0),
-            0
-          ),
-        }))
-        .sort((a, b) => b.score - a.score);
-
-      const members = [pivot, ...scored.slice(0, GROUP_SIZE - 1).map((s) => s.uid)];
-      groups.push(members);
-      members.forEach((u) => ungrouped.delete(u));
-    }
-
-    // Distribute leftovers into closest group
-    for (const uid of ungrouped) {
-      let best = 0;
-      let bestScore = -1;
-      for (let g = 0; g < groups.length; g++) {
-        const avg =
-          groups[g].reduce(
-            (s, m) =>
-              s + userAnswers[uid].reduce((t, a, i) => t + (a === userAnswers[m][i] ? 1 : 0), 0),
-            0
-          ) / groups[g].length;
-        if (avg > bestScore) {
-          bestScore = avg;
-          best = g;
-        }
-      }
-      groups[best].push(uid);
-    }
-
-    // 4. Derive group name from dominant answers on Q1 (creative) & Q3 (entertainment)
-    const ADJ = { A: "Artsy", B: "Literary", C: "Musical", D: "Maker", E: "Creative" };
-    const NOUN = { A: "Gamers", B: "Film Buffs", C: "Bookworms", D: "Podcasters", E: "Explorers" };
-    const EMOJI = { A: "🎨", B: "✍️", C: "🎵", D: "🔧", E: "✨" };
-
-    function nameForGroup(memberIds) {
-      const q1 = {}, q3 = {};
-      for (const uid of memberIds) {
-        const a = userAnswers[uid];
-        q1[a[0]] = (q1[a[0]] || 0) + 1;
-        q3[a[2]] = (q3[a[2]] || 0) + 1;
-      }
-      const topQ1 = Object.entries(q1).sort((a, b) => b[1] - a[1])[0][0];
-      const topQ3 = Object.entries(q3).sort((a, b) => b[1] - a[1])[0][0];
-      return { name: `${ADJ[topQ1]} ${NOUN[topQ3]}`, emoji: EMOJI[topQ1] };
-    }
-
-    // 5. Persist — keep old groups where friendships exist, create new ones
-    const result = db.transaction(() => {
-      // Skip seed groups (id <= 3) — they're permanent
-      const activeGroups = db.prepare("SELECT id FROM groupchat WHERE active = 1 AND id > 3").all();
-
-      // For each old matched group: snapshot members, decide who stays (has a friend), then apply
-      for (const { id: gid } of activeGroups) {
-        const memberIds = db.prepare("SELECT user_id FROM user_groupchat WHERE groupchat_id = ?")
-          .all(gid).map((r) => r.user_id);
-        if (memberIds.length === 0) { db.prepare("UPDATE groupchat SET active = 0 WHERE id = ?").run(gid); continue; }
-
-        // Build a Set of who stays (has at least one friend in the ORIGINAL member list)
-        const keeps = new Set();
-        for (const uid of memberIds) {
-          for (const other of memberIds) {
-            if (other === uid) continue;
-            const row = db.prepare("SELECT 1 FROM user_friends WHERE user_id = ? AND friend_id = ?").get(uid, other);
-            if (row) { keeps.add(uid); break; }
-          }
-        }
-
-        // Remove members who didn't friend anyone
-        for (const uid of memberIds) {
-          if (!keeps.has(uid)) {
-            db.prepare("DELETE FROM user_groupchat WHERE user_id = ? AND groupchat_id = ?").run(uid, gid);
-          }
-        }
-
-        // Deactivate groups that dropped below 2 members
-        if (keeps.size < 2) {
-          db.prepare("UPDATE groupchat SET active = 0 WHERE id = ?").run(gid);
-        }
-      }
-
-      // Create new matched groups
-      const insGroup = db.prepare("INSERT INTO groupchat (name, chat_photo, active) VALUES (?, ?, 1)");
-      const insMember = db.prepare("INSERT OR IGNORE INTO user_groupchat (user_id, groupchat_id) VALUES (?, ?)");
-
-      const created = [];
-      const usedNames = new Set();
-
-      for (const members of groups) {
-        let { name, emoji } = nameForGroup(members);
-        let unique = name;
-        let n = 2;
-        while (usedNames.has(unique)) { unique = `${name} ${n++}`; }
-        usedNames.add(unique);
-
-        const r = insGroup.run(unique, emoji);
-        const gid = Number(r.lastInsertRowid);
-        for (const uid of members) insMember.run(uid, gid);
-        created.push({ id: gid, name: unique, emoji, memberCount: members.length });
-      }
-      return created;
-    })();
-
-    res.json({ success: true, groups: result, totalUsers: completedUsers.length });
+    res.json(result);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to run matching." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/cron-schedule — current schedule + next run time
+// ---------------------------------------------------------------------------
+app.get("/api/cron-schedule", (req, res) => {
+  try {
+    const { hour, minute } = getCronSettings();
+    res.json({ hour, minute, nextRunAt: getNextRunAt(hour, minute) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch schedule." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/admin/cron-schedule — update schedule (admin only)
+// ---------------------------------------------------------------------------
+app.put("/api/admin/cron-schedule", requireAdmin, (req, res) => {
+  try {
+    const hour = Number(req.body.hour);
+    const minute = Number(req.body.minute);
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+      return res.status(400).json({ error: "hour must be 0–23." });
+    }
+    if (!Number.isInteger(minute) || minute < 0 || minute > 59) {
+      return res.status(400).json({ error: "minute must be 0–59." });
+    }
+    db.prepare("UPDATE cron_settings SET hour = ?, minute = ? WHERE id = 1").run(hour, minute);
+    startCronJob();
+    res.json({ hour, minute, nextRunAt: getNextRunAt(hour, minute) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update schedule." });
   }
 });
 

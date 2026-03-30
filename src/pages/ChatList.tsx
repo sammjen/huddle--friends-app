@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, MessageCircle, LogIn, UserPlus, Shuffle } from "lucide-react";
-import { toast } from "sonner";
+import { Users, MessageCircle, LogIn, UserPlus } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,20 +17,18 @@ interface Group {
   last_message: string | null;
 }
 
-/* Seconds until next UTC midnight */
-const secondsUntilMidnight = () => {
-  const now = new Date();
-  const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
-  return Math.max(0, Math.floor((next.getTime() - now.getTime()) / 1000));
-};
+/* Cycle length in seconds — keep short for demos */
+const DEMO_CYCLE_SECONDS = 120;
 
-/* Has a shuffle already happened today (UTC)? */
-const shuffledToday = () => {
-  const last = localStorage.getItem("huddle-last-shuffle");
-  if (!last) return false;
-  const lastDate = new Date(Number(last)).toISOString().slice(0, 10);
-  const today = new Date().toISOString().slice(0, 10);
-  return lastDate === today;
+const initCountdown = (): number => {
+  const stored = localStorage.getItem("huddle-next-shuffle");
+  if (stored) {
+    const remaining = Math.max(0, Math.floor((Number(stored) - Date.now()) / 1000));
+    if (remaining > 0) return remaining;
+  }
+  const next = Date.now() + DEMO_CYCLE_SECONDS * 1000;
+  localStorage.setItem("huddle-next-shuffle", String(next));
+  return DEMO_CYCLE_SECONDS;
 };
 
 const CountdownTimer = ({ seconds }: { seconds: number }) => {
@@ -65,8 +62,7 @@ const ChatList = () => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
   const [shuffling, setShuffling] = useState(false);
-  const [countdown, setCountdown] = useState(secondsUntilMidnight);
-  const [alreadyShuffled, setAlreadyShuffled] = useState(shuffledToday);
+  const [countdown, setCountdown] = useState(initCountdown);
 
   const shufflingRef = useRef(false);
   const hasAutoMatched = useRef(false);
@@ -82,56 +78,46 @@ const ChatList = () => {
     }
   }, [user]);
 
-  const runMatch = useCallback(async () => {
-    if (shufflingRef.current) return;
-    shufflingRef.current = true;
-    setShuffling(true);
+  const fetchSchedule = useCallback(async () => {
     try {
       const res = await fetch(apiUrl("/api/match"), { method: "POST" });
       if (!res.ok) throw new Error();
-      localStorage.setItem("huddle-last-shuffle", String(Date.now()));
-      setAlreadyShuffled(true);
-      setCountdown(secondsUntilMidnight());
+      // Reset timer
+      const next = Date.now() + DEMO_CYCLE_SECONDS * 1000;
+      localStorage.setItem("huddle-next-shuffle", String(next));
+      setCountdown(DEMO_CYCLE_SECONDS);
       await fetchGroups();
       toast.success("Groups shuffled! Meet your new crew.");
     } catch {
-      toast.error("Failed to shuffle groups.");
-    } finally {
-      shufflingRef.current = false;
-      setShuffling(false);
+      /* silent */
     }
   }, [fetchGroups]);
 
+  // Stable ref so the interval never re-creates
   const matchRef = useRef(runMatch);
   matchRef.current = runMatch;
 
-  // Initial group fetch
+  // Initial fetches
   useEffect(() => {
     if (!isAuthenticated || !user) return;
     setLoading(true);
-    fetchGroups().finally(() => setLoading(false));
-  }, [isAuthenticated, user, fetchGroups]);
+    Promise.all([fetchGroups(), fetchSchedule()]).finally(() => setLoading(false));
+  }, [isAuthenticated, user, fetchGroups, fetchSchedule]);
 
-  // Auto-match if user has no groups on first load
-  useEffect(() => {
-    if (!loading && groups.length === 0 && isAuthenticated && user && !hasAutoMatched.current) {
-      hasAutoMatched.current = true;
-      matchRef.current();
-    }
-  }, [loading, groups.length, isAuthenticated, user]);
-
-  // Tick-down timer — auto-shuffle at midnight if not already shuffled today
+  // Tick-down timer — fire match when it reaches 0
   useEffect(() => {
     if (!isAuthenticated) return;
     const interval = setInterval(() => {
-      const remaining = secondsUntilMidnight();
-      setCountdown(remaining);
-      if (remaining <= 0 && !shuffledToday()) {
-        matchRef.current();
-      }
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          matchRef.current();
+          return DEMO_CYCLE_SECONDS;
+        }
+        return prev - 1;
+      });
     }, 1000);
     return () => clearInterval(interval);
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchGroups, fetchSchedule]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -176,24 +162,22 @@ const ChatList = () => {
               <div className="absolute inset-0 bg-primary/5 rounded-2xl" />
               <div className="relative">
                 <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-widest mb-3">
-                  Next Group Shuffle In
+                  Next Group Assignment In
                 </p>
                 <CountdownTimer seconds={countdown} />
                 <p className="text-xs sm:text-sm text-muted-foreground mt-3 sm:mt-4">
-                  New friends drop every 24 hours
+                  New personality-matched groups every cycle
                 </p>
-                {!alreadyShuffled && (
-                  <Button
-                    onClick={() => matchRef.current()}
-                    disabled={shuffling}
-                    variant="outline"
-                    size="sm"
-                    className="mt-3 gap-1.5 rounded-full"
-                  >
-                    <Shuffle className={`w-3.5 h-3.5 ${shuffling ? "animate-spin" : ""}`} />
-                    {shuffling ? "Shuffling…" : "Shuffle Now"}
-                  </Button>
-                )}
+                <Button
+                  onClick={() => matchRef.current()}
+                  disabled={shuffling}
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 gap-1.5 rounded-full"
+                >
+                  <Shuffle className={`w-3.5 h-3.5 ${shuffling ? "animate-spin" : ""}`} />
+                  {shuffling ? "Shuffling…" : "Shuffle Now"}
+                </Button>
               </div>
             </div>
           </div>
@@ -205,7 +189,7 @@ const ChatList = () => {
               Your Groups
             </h2>
 
-            {loading || shuffling ? (
+            {loading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="bg-card rounded-2xl p-3 sm:p-4 shadow-sm">

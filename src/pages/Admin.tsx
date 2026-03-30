@@ -6,8 +6,9 @@ import { apiUrl } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Users, MessageSquare, LayoutDashboard, Shield, FlaskConical, RefreshCw, Flag, AlertTriangle, Inbox, TrendingUp, CheckCircle2, Clock, XCircle } from "lucide-react";
+import { Users, MessageSquare, LayoutDashboard, Shield, FlaskConical, RefreshCw, Flag, AlertTriangle, Inbox, TrendingUp, CheckCircle2, Clock, XCircle, CalendarClock } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 
 interface Stats {
   users: number;
@@ -111,7 +112,16 @@ const Admin = () => {
   const [activation, setActivation] = useState<{ summary: ActivationSummary; users: ActivationUserRow[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "users" | "chats" | "messages" | "reports" | "appeals" | "activation">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "users" | "chats" | "messages" | "reports" | "appeals" | "activation" | "scheduling">("overview");
+
+  // Scheduling state
+  const [schedHour, setSchedHour] = useState(0);
+  const [schedMinute, setSchedMinute] = useState(0);
+  const [schedNextRunAt, setSchedNextRunAt] = useState<string | null>(null);
+  const [schedSaving, setSchedSaving] = useState(false);
+  const [schedRunning, setSchedRunning] = useState(false);
+  const [schedError, setSchedError] = useState<string | null>(null);
+  const [schedSuccess, setSchedSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) { navigate("/get-started"); return; }
@@ -187,6 +197,21 @@ const Admin = () => {
   };
 
   useEffect(() => { fetchAll(); }, [user]);
+
+  const fetchSchedule = async () => {
+    try {
+      const res = await fetch(apiUrl("/api/cron-schedule"));
+      if (!res.ok) return;
+      const data = await res.json();
+      setSchedHour(data.hour);
+      setSchedMinute(data.minute);
+      setSchedNextRunAt(data.nextRunAt);
+    } catch { /* silent */ }
+  };
+
+  useEffect(() => {
+    if (activeTab === "scheduling") fetchSchedule();
+  }, [activeTab]);
 
   const toggleRole = async (targetId: number, currentRole: "user" | "admin") => {
     if (!user) return;
@@ -271,6 +296,7 @@ const Admin = () => {
     { key: "reports", label: `Reports${pendingCount > 0 ? ` (${pendingCount})` : ""}`, icon: Flag },
     { key: "appeals", label: `Appeals${pendingAppealCount > 0 ? ` (${pendingAppealCount})` : ""}`, icon: Inbox },
     { key: "activation", label: "Activation", icon: TrendingUp },
+    { key: "scheduling", label: "Scheduling", icon: CalendarClock },
   ] as const;
 
   return (
@@ -721,6 +747,149 @@ const Admin = () => {
                     </table>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Scheduling Tab */}
+        {activeTab === "scheduling" && (
+          <div className="space-y-6 max-w-lg">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <CalendarClock className="h-4 w-4 text-primary" />
+                  Daily Match Schedule
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Every day at the configured time, users who have completed the personality quiz will automatically be placed into new personality-matched group chats.
+                </p>
+
+                {schedNextRunAt && (
+                  <div className="bg-secondary/50 rounded-lg p-3 text-sm space-y-1">
+                    <div>
+                      <span className="font-medium text-foreground">Next run: </span>
+                      <span className="text-muted-foreground">
+                        {new Date(schedNextRunAt).toLocaleString(undefined, {
+                          weekday: "short", month: "short", day: "numeric",
+                          hour: "2-digit", minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="font-medium text-foreground">Timezone: </span>
+                      <span className="text-muted-foreground">
+                        {Intl.DateTimeFormat().resolvedOptions().timeZone}
+                        {" ("}
+                        {new Date(schedNextRunAt).toLocaleString(undefined, { timeZoneName: "short" }).split(" ").pop()}
+                        {")"}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-end gap-3">
+                  <div className="flex-1">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1.5">
+                      Hour (0–23)
+                    </label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={23}
+                      value={schedHour}
+                      onChange={(e) => setSchedHour(Math.min(23, Math.max(0, Number(e.target.value))))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1.5">
+                      Minute (0–59)
+                    </label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={schedMinute}
+                      onChange={(e) => setSchedMinute(Math.min(59, Math.max(0, Number(e.target.value))))}
+                      className="w-full"
+                    />
+                  </div>
+                  <Button
+                    disabled={schedSaving}
+                    onClick={async () => {
+                      if (!user) return;
+                      setSchedSaving(true);
+                      setSchedError(null);
+                      setSchedSuccess(null);
+                      try {
+                        const res = await fetch(apiUrl("/api/admin/cron-schedule"), {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ userId: user.id, hour: schedHour, minute: schedMinute }),
+                        });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error || "Failed to save.");
+                        setSchedNextRunAt(data.nextRunAt);
+                        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                        setSchedSuccess(
+                          `Saved. Next run: ${new Date(data.nextRunAt).toLocaleString(undefined, {
+                            weekday: "short", month: "short", day: "numeric",
+                            hour: "2-digit", minute: "2-digit", timeZoneName: "short",
+                          })} (${tz})`
+                        );
+                      } catch (e) {
+                        setSchedError(e instanceof Error ? e.message : "Failed to save.");
+                      } finally {
+                        setSchedSaving(false);
+                      }
+                    }}
+                  >
+                    {schedSaving ? "Saving…" : "Save"}
+                  </Button>
+                </div>
+
+                {schedError && (
+                  <p className="text-sm text-destructive">{schedError}</p>
+                )}
+                {schedSuccess && (
+                  <p className="text-sm text-green-600">{schedSuccess}</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Run Match Now</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Manually trigger the personality matching algorithm outside of the scheduled time. Admins and users who haven't completed the quiz are excluded.
+                </p>
+                <Button
+                  variant="outline"
+                  disabled={schedRunning}
+                  onClick={async () => {
+                    if (!user) return;
+                    setSchedRunning(true);
+                    setSchedError(null);
+                    setSchedSuccess(null);
+                    try {
+                      const res = await fetch(apiUrl("/api/match"), { method: "POST" });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data.error || "Match failed.");
+                      setSchedSuccess(`Match complete — ${data.groups?.length ?? 0} new groups created for ${data.totalUsers} users.`);
+                    } catch (e) {
+                      setSchedError(e instanceof Error ? e.message : "Match failed.");
+                    } finally {
+                      setSchedRunning(false);
+                    }
+                  }}
+                >
+                  {schedRunning ? "Running…" : "Run Match Now"}
+                </Button>
               </CardContent>
             </Card>
           </div>
