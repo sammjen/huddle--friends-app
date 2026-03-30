@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/carousel";
 import { UserPlus, Clock, MessageCircle, Star, Instagram, Twitter, Youtube } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
+import { useAuth } from "@/components/AuthProvider";
 import { toast } from "sonner";
 import { DEFAULT_REVIEWS, loadUserReviews, saveUserReviews, type Review } from "@/lib/reviews";
 
@@ -38,6 +39,7 @@ const STEPS = [
 
 const Index = () => {
   const navigate = useNavigate();
+  const { isAuthenticated, user } = useAuth();
   const [userReviews, setUserReviews] = useState<Review[]>(() => loadUserReviews());
   const [quote, setQuote] = useState("");
   const [reviewerName, setReviewerName] = useState("");
@@ -88,27 +90,55 @@ const Index = () => {
         <h1 className="text-5xl sm:text-6xl md:text-8xl font-black text-foreground leading-none tracking-tight animate-fade-in relative">
           Huddle
         </h1>
-        <p className="text-lg sm:text-xl md:text-2xl font-semibold text-primary mt-3 animate-slide-up">
-          New friends, every 24 hours.
-        </p>
-        <p className="text-sm sm:text-base md:text-lg text-muted-foreground mt-3 sm:mt-4 max-w-xs sm:max-w-sm md:max-w-xl leading-relaxed animate-slide-up px-2">
-          We match you with people who get you — then drop you into a group chat. No swiping. No awkward intros.
-        </p>
-        <div className="flex gap-3 mt-6 sm:mt-8 animate-slide-up">
-          <Button
-            variant="ghost"
-            className="rounded-full px-4 sm:px-6 text-muted-foreground hover:text-foreground text-sm sm:text-base"
-            onClick={() => navigate("/get-started")}
-          >
-            Log in
-          </Button>
-          <Button
-            className="rounded-full px-6 sm:px-8 h-11 sm:h-12 text-sm sm:text-base font-semibold"
-            onClick={() => navigate("/get-started?mode=signup")}
-          >
-            Get Started
-          </Button>
-        </div>
+        {isAuthenticated ? (
+          <>
+            <p className="text-lg sm:text-xl md:text-2xl font-semibold text-primary mt-3 animate-slide-up">
+              Welcome back, {user?.displayName || user?.username}!
+            </p>
+            <p className="text-sm sm:text-base md:text-lg text-muted-foreground mt-3 sm:mt-4 max-w-xs sm:max-w-sm md:max-w-xl leading-relaxed animate-slide-up px-2">
+              Your group chats are waiting. Jump in and connect with your crew.
+            </p>
+            <div className="flex gap-3 mt-6 sm:mt-8 animate-slide-up">
+              <Button
+                className="rounded-full px-6 sm:px-8 h-11 sm:h-12 text-sm sm:text-base font-semibold"
+                onClick={() => navigate("/chats")}
+              >
+                Go to Chats
+              </Button>
+              <Button
+                variant="ghost"
+                className="rounded-full px-4 sm:px-6 text-muted-foreground hover:text-foreground text-sm sm:text-base"
+                onClick={() => navigate("/events")}
+              >
+                View Events
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-lg sm:text-xl md:text-2xl font-semibold text-primary mt-3 animate-slide-up">
+              New friends, every 24 hours.
+            </p>
+            <p className="text-sm sm:text-base md:text-lg text-muted-foreground mt-3 sm:mt-4 max-w-xs sm:max-w-sm md:max-w-xl leading-relaxed animate-slide-up px-2">
+              We match you with people who get you — then drop you into a group chat. No swiping. No awkward intros.
+            </p>
+            <div className="flex gap-3 mt-6 sm:mt-8 animate-slide-up">
+              <Button
+                variant="ghost"
+                className="rounded-full px-4 sm:px-6 text-muted-foreground hover:text-foreground text-sm sm:text-base"
+                onClick={() => navigate("/get-started")}
+              >
+                Log in
+              </Button>
+              <Button
+                className="rounded-full px-6 sm:px-8 h-11 sm:h-12 text-sm sm:text-base font-semibold"
+                onClick={() => navigate("/get-started?mode=signup")}
+              >
+                Get Started
+              </Button>
+            </div>
+          </>
+        )}
       </section>
 
       {/* How It Works */}
@@ -252,14 +282,29 @@ const Index = () => {
       {/* CTA */}
       <section className="px-4 sm:px-6 py-10 sm:py-12 text-center">
         <div className="bg-secondary rounded-2xl p-6 sm:p-8 max-w-sm sm:max-w-xl md:max-w-2xl mx-auto">
-          <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-foreground mb-2">Ready to find your crew?</h2>
-          <p className="text-xs sm:text-sm md:text-base text-muted-foreground mb-5 sm:mb-6">It takes less than 2 minutes to get started.</p>
-          <Button
-            className="rounded-full px-8 h-11 sm:h-12 text-sm sm:text-base font-semibold w-full sm:w-auto"
-            onClick={() => navigate("/get-started?mode=signup")}
-          >
-            Get Started
-          </Button>
+          {isAuthenticated ? (
+            <>
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-foreground mb-2">Your crew is waiting</h2>
+              <p className="text-xs sm:text-sm md:text-base text-muted-foreground mb-5 sm:mb-6">Check out your group chats and make some plans.</p>
+              <Button
+                className="rounded-full px-8 h-11 sm:h-12 text-sm sm:text-base font-semibold w-full sm:w-auto"
+                onClick={() => navigate("/chats")}
+              >
+                Go to Chats
+              </Button>
+            </>
+          ) : (
+            <>
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-foreground mb-2">Ready to find your crew?</h2>
+              <p className="text-xs sm:text-sm md:text-base text-muted-foreground mb-5 sm:mb-6">It takes less than 2 minutes to get started.</p>
+              <Button
+                className="rounded-full px-8 h-11 sm:h-12 text-sm sm:text-base font-semibold w-full sm:w-auto"
+                onClick={() => navigate("/get-started?mode=signup")}
+              >
+                Get Started
+              </Button>
+            </>
+          )}
         </div>
       </section>
 
