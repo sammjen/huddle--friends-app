@@ -119,9 +119,9 @@ const ChatConversation = () => {
     }).catch(() => {});
   }, [user?.id]);
 
-  // Fetch members when sheet opens
+  // Fetch members for preview + sheet
   useEffect(() => {
-    if (!membersOpen || !groupId || !user) return;
+    if (!groupId || !user) return;
     setMembersLoading(true);
     fetch(apiUrl(`/api/groupchats/${groupId}/members?userId=${user.id}`))
       .then((res) => res.json())
@@ -137,7 +137,27 @@ const ChatConversation = () => {
       )
       .catch(() => toast.error("Couldn't load members."))
       .finally(() => setMembersLoading(false));
-  }, [membersOpen, groupId, user]);
+  }, [groupId, user]);
+
+  // Retry if sheet opens and members are still empty
+  useEffect(() => {
+    if (!membersOpen || !groupId || !user || members.length > 0) return;
+    setMembersLoading(true);
+    fetch(apiUrl(`/api/groupchats/${groupId}/members?userId=${user.id}`))
+      .then((res) => res.json())
+      .then((data) =>
+        setMembers(
+          Array.isArray(data)
+            ? data.map((m) => ({
+                ...m,
+                friend_status: m.friend_status || (m.is_friend ? "friends" : "none"),
+              }))
+            : []
+        )
+      )
+      .catch(() => toast.error("Couldn't load members."))
+      .finally(() => setMembersLoading(false));
+  }, [membersOpen, groupId, user, members.length]);
 
   const updateMemberStatus = (memberId: number, status: FriendStatus) => {
     setMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, friend_status: status } : m)));
@@ -478,6 +498,48 @@ const ChatConversation = () => {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* In-chat preview */}
+      <div className="px-3 sm:px-6 md:px-8 py-2 border-b border-border bg-secondary/20">
+        <button
+          onClick={() => setMembersOpen(true)}
+          className="w-full flex items-center justify-between gap-3 text-left hover:opacity-80 transition-opacity"
+          aria-label="View assigned members"
+        >
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">In Chat</p>
+            <div className="flex items-center gap-2 mt-1">
+              {membersLoading && members.length === 0 ? (
+                <div className="flex items-center gap-1">
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="w-7 h-7 rounded-full" />
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center -space-x-2">
+                  {members.slice(0, 4).map((member) => (
+                    <Avatar key={member.id} className="w-7 h-7 border border-background">
+                      {member.profile_photo && <AvatarImage src={member.profile_photo} />}
+                      <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-semibold">
+                        {initials(member.display_name, member.username)}
+                      </AvatarFallback>
+                    </Avatar>
+                  ))}
+                  {members.length > 4 && (
+                    <div className="w-7 h-7 rounded-full bg-secondary border border-background flex items-center justify-center text-[10px] text-muted-foreground font-semibold">
+                      +{members.length - 4}
+                    </div>
+                  )}
+                </div>
+              )}
+              {members.length > 0 && (
+                <span className="text-xs text-muted-foreground">{members.length} people</span>
+              )}
+            </div>
+          </div>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">View all</span>
+        </button>
+      </div>
 
       {/* Report Dialog */}
       <Dialog open={!!reportTarget} onOpenChange={(open) => { if (!open) { setReportTarget(null); setReportReason(""); setReportDescription(""); } }}>
