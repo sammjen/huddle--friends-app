@@ -113,8 +113,6 @@ const ChatConversation = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-<<<<<<< HEAD
-=======
   // Tick every second so the delete button disappears in real-time after 1 minute
   useEffect(() => {
     const id = setInterval(() => setTicker(Date.now()), 1000);
@@ -123,8 +121,6 @@ const ChatConversation = () => {
 
   const canDelete = (msg: Message) => ticker - msg.sentAt < 60 * 1000;
 
-  // Fetch members when sheet opens
->>>>>>> 1f5be1b (Updated the message delete and bubble formatting for messaging)
   useEffect(() => {
     if (!user?.id) return;
     fetch(apiUrl("/api/activation/chat-joined"), {
@@ -679,11 +675,7 @@ const ChatConversation = () => {
                       setSelectedId(isSelected ? null : msg.id);
                     }
                   }}
-<<<<<<< HEAD
-                  className={`max-w-[82%] sm:max-w-[75%] px-3 sm:px-4 py-2 sm:py-2.5 text-sm shadow-sm break-words min-w-0 ${
-=======
                   className={`px-3 sm:px-4 py-2 sm:py-2.5 text-sm shadow-sm break-words ${
->>>>>>> 1f5be1b (Updated the message delete and bubble formatting for messaging)
                     msg.isMe
                       ? `bg-primary text-primary-foreground rounded-2xl rounded-br-sm ${!editingId ? "cursor-pointer active:opacity-80" : ""}`
                       : "bg-card text-card-foreground rounded-2xl rounded-bl-sm"
