@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, MessageCircle, LogIn, UserPlus } from "lucide-react";
+import { Users, MessageCircle, LogIn, UserPlus, Shuffle } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/components/AuthProvider";
 import { apiUrl } from "@/lib/api";
+import { toast } from "sonner";
 
 interface Group {
   id: number;
@@ -94,8 +95,8 @@ const ChatList = () => {
   }, [fetchGroups]);
 
   // Stable ref so the interval never re-creates
-  const matchRef = useRef(runMatch);
-  matchRef.current = runMatch;
+  const matchRef = useRef(fetchSchedule);
+  matchRef.current = fetchSchedule;
 
   // Initial fetches
   useEffect(() => {
