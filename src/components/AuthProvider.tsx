@@ -29,8 +29,17 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(() => {
-    const stored = localStorage.getItem("huddle-user");
-    return stored ? JSON.parse(stored) : null;
+    try {
+      const stored = localStorage.getItem("huddle-user");
+      if (!stored) return null;
+      const parsed = JSON.parse(stored);
+      if (parsed && typeof parsed.id === "number" && typeof parsed.username === "string") return parsed;
+      localStorage.removeItem("huddle-user");
+      return null;
+    } catch {
+      localStorage.removeItem("huddle-user");
+      return null;
+    }
   });
 
   const logout = useCallback(() => {

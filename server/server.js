@@ -62,6 +62,21 @@ for (const sql of migrations) {
   try { db.exec(sql); } catch (_) { /* column already exists */ }
 }
 
+// Performance indexes for frequently queried columns
+const indexes = [
+  "CREATE INDEX IF NOT EXISTS idx_user_groupchat_groupchat ON user_groupchat(groupchat_id)",
+  "CREATE INDEX IF NOT EXISTS idx_user_groupchat_user ON user_groupchat(user_id)",
+  "CREATE INDEX IF NOT EXISTS idx_message_groupchat ON message(groupchat_id, sent_time DESC)",
+  "CREATE INDEX IF NOT EXISTS idx_user_hobby_answers_user ON user_hobby_answers(user_id)",
+  "CREATE INDEX IF NOT EXISTS idx_user_friends_user ON user_friends(user_id)",
+  "CREATE INDEX IF NOT EXISTS idx_friend_requests_receiver ON friend_requests(receiver_id, status)",
+  "CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status)",
+  "CREATE INDEX IF NOT EXISTS idx_user_username ON user(username)",
+];
+for (const sql of indexes) {
+  try { db.exec(sql); } catch (_) { /* index or table may not exist yet */ }
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,7 +109,7 @@ if (!adminExists) {
 }
 
 function parseUserIdParam(req) {
-  const raw = req.query.userId ?? req.body?.userId;
+  const raw = req.query.userId ?? req.body?.userId ?? req.params?.userId;
   const v = Array.isArray(raw) ? raw[0] : raw;
   const n = Number(v);
   return Number.isInteger(n) ? n : NaN;
@@ -942,7 +957,7 @@ app.get("/api/messages/:groupId", (req, res) => {
 });
 
 // POST /api/messages - Send a message
-app.post("/api/messages", (req, res) => {
+app.post("/api/messages", requireAuth, (req, res) => {
   try {
     const { userId, groupId, message } = req.body;
     if (!groupId || !message) {
@@ -966,7 +981,7 @@ app.post("/api/messages", (req, res) => {
 });
 
 // PUT /api/messages/:id - Edit a message (only the sender can edit)
-app.put("/api/messages/:id", (req, res) => {
+app.put("/api/messages/:id", requireAuth, (req, res) => {
   try {
     const { id } = req.params;
     const { userId, message } = req.body;
@@ -994,7 +1009,7 @@ app.put("/api/messages/:id", (req, res) => {
 });
 
 // DELETE /api/messages/:id - Delete a message (only within 1 minute of sending)
-app.delete("/api/messages/:id", (req, res) => {
+app.delete("/api/messages/:id", requireAuth, (req, res) => {
   try {
     const { id } = req.params;
     const { userId } = req.body;
@@ -1031,7 +1046,7 @@ app.get("/api/profile/:userId", (req, res) => {
 });
 
 // PUT /api/profile/:userId - Update profile fields
-app.put("/api/profile/:userId", (req, res) => {
+app.put("/api/profile/:userId", requireAuth, (req, res) => {
   try {
     const { userId } = req.params;
     const { display_name, bio, city, email, profile_photo, hobbies } = req.body;
@@ -1057,7 +1072,7 @@ app.put("/api/profile/:userId", (req, res) => {
 });
 
 // PUT /api/profile/:userId/password - Change password
-app.put("/api/profile/:userId/password", async (req, res) => {
+app.put("/api/profile/:userId/password", requireAuth, async (req, res) => {
   try {
     const { userId } = req.params;
     const { currentPassword, newPassword } = req.body;
@@ -1077,7 +1092,7 @@ app.put("/api/profile/:userId/password", async (req, res) => {
 });
 
 // PUT /api/profile/:userId/username - Change username
-app.put("/api/profile/:userId/username", (req, res) => {
+app.put("/api/profile/:userId/username", requireAuth, (req, res) => {
   try {
     const { userId } = req.params;
     const { username } = req.body;
@@ -1448,21 +1463,43 @@ app.post("/api/match", (req, res) => {
       return { name: `${ADJ[topQ1]} ${NOUN[topQ3]}`, emoji: EMOJI[topQ1] };
     }
 
-    // 5. Persist: deactivate old matched groups, create new ones
+    // 5. Persist — keep old groups where friendships exist, create new ones
     const result = db.transaction(() => {
-      // Deactivate all current active groups EXCEPT "The Boys" (permanent demo chat)
-      db.prepare("UPDATE groupchat SET active = 0 WHERE active = 1 AND name != 'The Boys'").run();
+      // Skip seed groups (id <= 3) — they're permanent
+      const activeGroups = db.prepare("SELECT id FROM groupchat WHERE active = 1 AND id > 3").all();
 
-      const insGroup = db.prepare("INSERT INTO groupchat (name, chat_photo, active) VALUES (?, ?, 1)");
-      const insMember = db.prepare("INSERT OR IGNORE INTO user_groupchat (user_id, groupchat_id) VALUES (?, ?)");
+      // For each old matched group: snapshot members, decide who stays (has a friend), then apply
+      for (const { id: gid } of activeGroups) {
+        const memberIds = db.prepare("SELECT user_id FROM user_groupchat WHERE groupchat_id = ?")
+          .all(gid).map((r) => r.user_id);
+        if (memberIds.length === 0) { db.prepare("UPDATE groupchat SET active = 0 WHERE id = ?").run(gid); continue; }
 
-      // Ensure all matched users are also in "The Boys"
-      const theBoys = db.prepare("SELECT id FROM groupchat WHERE name = 'The Boys'").get();
-      if (theBoys) {
-        for (const members of groups) {
-          for (const uid of members) insMember.run(uid, theBoys.id);
+        // Build a Set of who stays (has at least one friend in the ORIGINAL member list)
+        const keeps = new Set();
+        for (const uid of memberIds) {
+          for (const other of memberIds) {
+            if (other === uid) continue;
+            const row = db.prepare("SELECT 1 FROM user_friends WHERE user_id = ? AND friend_id = ?").get(uid, other);
+            if (row) { keeps.add(uid); break; }
+          }
+        }
+
+        // Remove members who didn't friend anyone
+        for (const uid of memberIds) {
+          if (!keeps.has(uid)) {
+            db.prepare("DELETE FROM user_groupchat WHERE user_id = ? AND groupchat_id = ?").run(uid, gid);
+          }
+        }
+
+        // Deactivate groups that dropped below 2 members
+        if (keeps.size < 2) {
+          db.prepare("UPDATE groupchat SET active = 0 WHERE id = ?").run(gid);
         }
       }
+
+      // Create new matched groups
+      const insGroup = db.prepare("INSERT INTO groupchat (name, chat_photo, active) VALUES (?, ?, 1)");
+      const insMember = db.prepare("INSERT OR IGNORE INTO user_groupchat (user_id, groupchat_id) VALUES (?, ?)");
 
       const created = [];
       const usedNames = new Set();

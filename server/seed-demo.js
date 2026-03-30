@@ -133,10 +133,28 @@ const txn = db.transaction(() => {
 
 txn();
 
+// Add all demo users to every active groupchat (including "The Boys")
+const activeChats = db.prepare("SELECT id FROM groupchat WHERE active = 1").all();
+const allDemoUsers = db.prepare("SELECT id FROM user WHERE role = 'user'").all();
+const insertMembership = db.prepare(
+  "INSERT OR IGNORE INTO user_groupchat (user_id, groupchat_id) VALUES (?, ?)"
+);
+
+const membershipTxn = db.transaction(() => {
+  for (const user of allDemoUsers) {
+    for (const chat of activeChats) {
+      insertMembership.run(user.id, chat.id);
+    }
+  }
+});
+membershipTxn();
+
 const userCount = db.prepare("SELECT COUNT(*) as c FROM user WHERE role = 'user'").get();
 const answerCount = db.prepare("SELECT COUNT(DISTINCT user_id) as c FROM user_hobby_answers").get();
+const memberCount = db.prepare("SELECT COUNT(*) as c FROM user_groupchat").get();
 
 console.log(`Done — ${userCount.c} users, ${answerCount.c} with personality answers.`);
+console.log(`${memberCount.c} groupchat memberships (all users added to ${activeChats.length} active chats).`);
 console.log("Demo password for all seeded users: demo123");
 
 db.close();
