@@ -993,6 +993,28 @@ app.put("/api/messages/:id", (req, res) => {
   }
 });
 
+// DELETE /api/messages/:id - Delete a message (only within 1 minute of sending)
+app.delete("/api/messages/:id", (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body;
+    const existing = db.prepare("SELECT user_id, sent_time FROM message WHERE id = ?").get(id);
+    if (!existing) return res.status(404).json({ error: "Message not found." });
+    if (existing.user_id !== userId) {
+      return res.status(403).json({ error: "You can only delete your own messages." });
+    }
+    const sentAt = new Date(existing.sent_time.replace(" ", "T") + "Z").getTime();
+    if (Date.now() - sentAt > 60 * 1000) {
+      return res.status(403).json({ error: "Messages can only be deleted within 1 minute of sending." });
+    }
+    db.prepare("DELETE FROM message WHERE id = ?").run(id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete message." });
+  }
+});
+
 // GET /api/profile/:userId - Get full profile
 app.get("/api/profile/:userId", (req, res) => {
   try {

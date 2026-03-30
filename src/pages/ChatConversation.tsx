@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useParams, Navigate } from "react-router-dom";
-import { ArrowLeft, Send, Pencil, X, MessageCircle, ChevronRight, UserPlus, UserCheck, Flag, Check, Clock } from "lucide-react";
+import { ArrowLeft, Send, Pencil, Trash2, X, MessageCircle, ChevronRight, UserPlus, UserCheck, Flag, Check, Clock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ interface Message {
   isMe: boolean;
   time: string;
   edited: boolean;
+  sentAt: number;
 }
 
 type FriendStatus = "friends" | "outgoing" | "incoming" | "none";
@@ -69,6 +70,7 @@ const ChatConversation = () => {
   const [reportReason, setReportReason] = useState("");
   const [reportDescription, setReportDescription] = useState("");
   const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [ticker, setTicker] = useState(Date.now());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -99,6 +101,7 @@ const ChatConversation = () => {
             isMe: m.user_id === user?.id,
             time: new Date(m.sent_time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
             edited: m.edited === 1,
+            sentAt: new Date(m.sent_time.replace(" ", "T") + "Z").getTime(),
           }))
         );
       })
@@ -110,6 +113,18 @@ const ChatConversation = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+<<<<<<< HEAD
+=======
+  // Tick every second so the delete button disappears in real-time after 1 minute
+  useEffect(() => {
+    const id = setInterval(() => setTicker(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const canDelete = (msg: Message) => ticker - msg.sentAt < 60 * 1000;
+
+  // Fetch members when sheet opens
+>>>>>>> 1f5be1b (Updated the message delete and bubble formatting for messaging)
   useEffect(() => {
     if (!user?.id) return;
     fetch(apiUrl("/api/activation/chat-joined"), {
@@ -261,7 +276,8 @@ const ChatConversation = () => {
     const text = message.trim();
     setMessage("");
 
-    const optimisticId = String(Date.now());
+    const now = Date.now();
+    const optimisticId = String(now);
     setMessages((prev) => [
       ...prev,
       {
@@ -271,6 +287,7 @@ const ChatConversation = () => {
         isMe: true,
         time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
         edited: false,
+        sentAt: now,
       },
     ]);
 
@@ -324,6 +341,27 @@ const ChatConversation = () => {
       });
     } catch {
       toast.error("Failed to edit message.");
+    }
+  };
+
+  const handleDelete = async (msgId: string) => {
+    setSelectedId(null);
+    const snapshot = messages;
+    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    try {
+      const res = await fetch(apiUrl(`/api/messages/${msgId}`), {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user?.id }),
+      });
+      if (!res.ok) {
+        setMessages(snapshot);
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Failed to delete message.");
+      }
+    } catch {
+      setMessages(snapshot);
+      toast.error("Failed to delete message.");
     }
   };
 
@@ -633,7 +671,7 @@ const ChatConversation = () => {
               {!msg.isMe && showSender && (
                 <span className="text-[11px] sm:text-xs text-muted-foreground mb-1 ml-1 font-medium">{msg.sender}</span>
               )}
-              <div className="relative">
+              <div className="relative max-w-[82%] sm:max-w-[75%]">
                 <div
                   onClick={(e) => {
                     if (msg.isMe && !editingId) {
@@ -641,7 +679,11 @@ const ChatConversation = () => {
                       setSelectedId(isSelected ? null : msg.id);
                     }
                   }}
+<<<<<<< HEAD
                   className={`max-w-[82%] sm:max-w-[75%] px-3 sm:px-4 py-2 sm:py-2.5 text-sm shadow-sm break-words min-w-0 ${
+=======
+                  className={`px-3 sm:px-4 py-2 sm:py-2.5 text-sm shadow-sm break-words ${
+>>>>>>> 1f5be1b (Updated the message delete and bubble formatting for messaging)
                     msg.isMe
                       ? `bg-primary text-primary-foreground rounded-2xl rounded-br-sm ${!editingId ? "cursor-pointer active:opacity-80" : ""}`
                       : "bg-card text-card-foreground rounded-2xl rounded-bl-sm"
@@ -650,13 +692,24 @@ const ChatConversation = () => {
                   {msg.text}
                 </div>
                 {isSelected && msg.isMe && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); startEditing(msg); }}
-                    className="absolute -top-8 right-0 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-secondary border border-border shadow-md text-xs font-medium text-foreground hover:bg-secondary/80 transition-colors"
-                  >
-                    <Pencil className="h-3 w-3" />
-                    Edit
-                  </button>
+                  <div className="absolute -top-8 right-0 flex items-center gap-1">
+                    {canDelete(msg) && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDelete(msg.id); }}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-secondary border border-border shadow-md text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Delete
+                      </button>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); startEditing(msg); }}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-secondary border border-border shadow-md text-xs font-medium text-foreground hover:bg-secondary/80 transition-colors"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      Edit
+                    </button>
+                  </div>
                 )}
               </div>
               <div className={`flex items-center gap-1.5 mt-0.5 mx-1 ${msg.isMe ? "flex-row-reverse" : ""}`}>
