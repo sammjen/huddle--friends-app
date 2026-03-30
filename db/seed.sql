@@ -40,6 +40,6 @@ INSERT OR IGNORE INTO user_groupchat (user_id, groupchat_id) VALUES
 
 -- Sample events
 INSERT OR IGNORE INTO events (id, name, event_date, location, description) VALUES
-  (1, 'Coffee Catch-Up', '2026-03-27 10:00:00', 'Denver Central Market', 'Easy morning meetup for coffee and conversation.'),
+  (1, 'Smoothie Social', '2026-03-27 10:00:00', 'Denver Central Market', 'Easy morning meetup for smoothies and conversation.'),
   (2, 'Trivia Night', '2026-03-29 19:00:00', 'The Post Chicken & Beer', 'Low-pressure team trivia and food.'),
   (3, 'City Park Walk', '2026-03-30 18:30:00', 'City Park', 'Sunset walk and hangout outdoors.');

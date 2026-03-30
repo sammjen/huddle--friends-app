@@ -346,13 +346,13 @@ const Admin = () => {
         {activeTab === "overview" && (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {[
-              { label: "Total Users", value: stats?.users, icon: Users, color: "text-blue-500" },
-              { label: "Admins", value: stats?.admins, icon: Shield, color: "text-purple-500" },
-              { label: "Group Chats", value: stats?.groupchats, icon: LayoutDashboard, color: "text-green-500" },
-              { label: "Messages", value: stats?.messages, icon: MessageSquare, color: "text-orange-500" },
+              { label: "Total Users", value: users.length || stats?.users, icon: Users, color: "text-blue-500" },
+              { label: "Admins", value: users.filter((u) => u.role === "admin").length || stats?.admins, icon: Shield, color: "text-purple-500" },
+              { label: "Group Chats", value: groupchats.length || stats?.groupchats, icon: LayoutDashboard, color: "text-green-500" },
+              { label: "Messages", value: messages.length || stats?.messages, icon: MessageSquare, color: "text-orange-500" },
               { label: "Personality Tests", value: stats?.personalityTests, icon: FlaskConical, color: "text-pink-500" },
-              { label: "Pending Reports", value: stats?.pendingReports, icon: AlertTriangle, color: "text-red-500" },
-              { label: "Pending Appeals", value: stats?.pendingAppeals, icon: Inbox, color: "text-amber-600" },
+              { label: "Pending Reports", value: reports.filter((r) => r.status === "pending").length || stats?.pendingReports, icon: AlertTriangle, color: "text-red-500" },
+              { label: "Pending Appeals", value: appeals.filter((a) => a.status === "pending").length || stats?.pendingAppeals, icon: Inbox, color: "text-amber-600" },
             ].map(({ label, value, icon: Icon, color }) => (
               <Card key={label}>
                 <CardHeader className="pb-2">
