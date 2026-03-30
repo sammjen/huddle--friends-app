@@ -18,18 +18,20 @@ interface Group {
   last_message: string | null;
 }
 
-/* Cycle length in seconds — keep short for demos */
-const DEMO_CYCLE_SECONDS = 120;
+/* Seconds until next UTC midnight */
+const secondsUntilMidnight = () => {
+  const now = new Date();
+  const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  return Math.max(0, Math.floor((next.getTime() - now.getTime()) / 1000));
+};
 
-const initCountdown = (): number => {
-  const stored = localStorage.getItem("huddle-next-shuffle");
-  if (stored) {
-    const remaining = Math.max(0, Math.floor((Number(stored) - Date.now()) / 1000));
-    if (remaining > 0) return remaining;
-  }
-  const next = Date.now() + DEMO_CYCLE_SECONDS * 1000;
-  localStorage.setItem("huddle-next-shuffle", String(next));
-  return DEMO_CYCLE_SECONDS;
+/* Has a shuffle already happened today (UTC)? */
+const shuffledToday = () => {
+  const last = localStorage.getItem("huddle-last-shuffle");
+  if (!last) return false;
+  const lastDate = new Date(Number(last)).toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  return lastDate === today;
 };
 
 const CountdownTimer = ({ seconds }: { seconds: number }) => {
@@ -63,7 +65,8 @@ const ChatList = () => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
   const [shuffling, setShuffling] = useState(false);
-  const [countdown, setCountdown] = useState(initCountdown);
+  const [countdown, setCountdown] = useState(secondsUntilMidnight);
+  const [alreadyShuffled, setAlreadyShuffled] = useState(shuffledToday);
 
   const shufflingRef = useRef(false);
   const hasAutoMatched = useRef(false);
@@ -79,46 +82,55 @@ const ChatList = () => {
     }
   }, [user]);
 
-  const fetchSchedule = useCallback(async () => {
+  const runMatch = useCallback(async () => {
+    if (shufflingRef.current) return;
+    shufflingRef.current = true;
+    setShuffling(true);
     try {
       const res = await fetch(apiUrl("/api/match"), { method: "POST" });
       if (!res.ok) throw new Error();
-      // Reset timer
-      const next = Date.now() + DEMO_CYCLE_SECONDS * 1000;
-      localStorage.setItem("huddle-next-shuffle", String(next));
-      setCountdown(DEMO_CYCLE_SECONDS);
+      localStorage.setItem("huddle-last-shuffle", String(Date.now()));
+      setAlreadyShuffled(true);
+      setCountdown(secondsUntilMidnight());
       await fetchGroups();
       toast.success("Groups shuffled! Meet your new crew.");
     } catch {
-      /* silent */
+      toast.error("Shuffle failed. Try again.");
+    } finally {
+      shufflingRef.current = false;
+      setShuffling(false);
     }
   }, [fetchGroups]);
 
-  // Stable ref so the interval never re-creates
-  const matchRef = useRef(fetchSchedule);
-  matchRef.current = fetchSchedule;
+  const matchRef = useRef(runMatch);
+  matchRef.current = runMatch;
 
-  // Initial fetches
+  // Initial fetch
   useEffect(() => {
     if (!isAuthenticated || !user) return;
     setLoading(true);
-    Promise.all([fetchGroups(), fetchSchedule()]).finally(() => setLoading(false));
-  }, [isAuthenticated, user, fetchGroups, fetchSchedule]);
+    fetchGroups().finally(() => setLoading(false));
+  }, [isAuthenticated, user, fetchGroups]);
 
-  // Tick-down timer — fire match when it reaches 0
+  // Auto-match on first load if user has no groups
+  useEffect(() => {
+    if (hasAutoMatched.current || loading || groups.length > 0 || !isAuthenticated || !user) return;
+    hasAutoMatched.current = true;
+    matchRef.current();
+  }, [loading, groups.length, isAuthenticated, user]);
+
+  // Tick-down timer — auto-shuffle at midnight if not already shuffled today
   useEffect(() => {
     if (!isAuthenticated) return;
     const interval = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          matchRef.current();
-          return DEMO_CYCLE_SECONDS;
-        }
-        return prev - 1;
-      });
+      const remaining = secondsUntilMidnight();
+      setCountdown(remaining);
+      if (remaining <= 0 && !shuffledToday()) {
+        matchRef.current();
+      }
     }, 1000);
     return () => clearInterval(interval);
-  }, [isAuthenticated, fetchGroups, fetchSchedule]);
+  }, [isAuthenticated]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -167,18 +179,20 @@ const ChatList = () => {
                 </p>
                 <CountdownTimer seconds={countdown} />
                 <p className="text-xs sm:text-sm text-muted-foreground mt-3 sm:mt-4">
-                  New personality-matched groups every cycle
+                  New friends drop every 24 hours
                 </p>
-                <Button
-                  onClick={() => matchRef.current()}
-                  disabled={shuffling}
-                  variant="outline"
-                  size="sm"
-                  className="mt-3 gap-1.5 rounded-full"
-                >
-                  <Shuffle className={`w-3.5 h-3.5 ${shuffling ? "animate-spin" : ""}`} />
-                  {shuffling ? "Shuffling…" : "Shuffle Now"}
-                </Button>
+                {!alreadyShuffled && (
+                  <Button
+                    onClick={() => matchRef.current()}
+                    disabled={shuffling}
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 gap-1.5 rounded-full"
+                  >
+                    <Shuffle className={`w-3.5 h-3.5 ${shuffling ? "animate-spin" : ""}`} />
+                    {shuffling ? "Shuffling…" : "Shuffle Now"}
+                  </Button>
+                )}
               </div>
             </div>
           </div>
