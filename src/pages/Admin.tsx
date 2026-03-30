@@ -6,7 +6,7 @@ import { apiUrl } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Users, MessageSquare, LayoutDashboard, Shield, FlaskConical, RefreshCw, Flag, AlertTriangle, Inbox } from "lucide-react";
+import { Users, MessageSquare, LayoutDashboard, Shield, FlaskConical, RefreshCw, Flag, AlertTriangle, Inbox, TrendingUp, CheckCircle2, Clock, XCircle } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 
 interface Stats {
@@ -59,6 +59,25 @@ interface UserRow {
   active: number;
 }
 
+interface ActivationSummary {
+  usersStartedTest: number;
+  usersJoinedChat: number;
+  chatJoinRate: number;
+  avgElapsedMs: number | null;
+  metTargetCount: number;
+  metTargetRate: number;
+}
+
+interface ActivationUserRow {
+  id: number;
+  username: string;
+  display_name: string | null;
+  test_started_at: string;
+  first_chat_joined_at: string | null;
+  elapsed_ms: number | null;
+  met_target: boolean | null;
+}
+
 interface GroupchatRow {
   id: number;
   name: string;
@@ -89,9 +108,10 @@ const Admin = () => {
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [appeals, setAppeals] = useState<AppealRow[]>([]);
   const [appealNotes, setAppealNotes] = useState<Record<number, string>>({});
+  const [activation, setActivation] = useState<{ summary: ActivationSummary; users: ActivationUserRow[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "users" | "chats" | "messages" | "reports" | "appeals">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "users" | "chats" | "messages" | "reports" | "appeals" | "activation">("overview");
 
   useEffect(() => {
     if (!user) { navigate("/get-started"); return; }
@@ -132,6 +152,7 @@ const Admin = () => {
         parse(fetch(apiUrl(`/api/admin/messages?${q}&limit=50`)), "Messages"),
         parse(fetch(apiUrl(`/api/admin/reports?${q}`)), "Reports"),
         parse(fetch(apiUrl(`/api/admin/appeals?${q}`)), "Appeals"),
+        parse(fetch(apiUrl(`/api/admin/activation?${q}`)), "Activation"),
       ]);
       const errs: string[] = [];
       const val = <T,>(i: number, fallback: T, isValid: (x: unknown) => x is T): T => {
@@ -153,6 +174,10 @@ const Admin = () => {
       setMessages(val(3, [], Array.isArray));
       setReports(val(4, [], Array.isArray));
       setAppeals(val(5, [], Array.isArray));
+      const actData = settled[6];
+      if (actData.status === "fulfilled" && actData.value !== null && typeof actData.value === "object" && "summary" in (actData.value as object)) {
+        setActivation(actData.value as { summary: ActivationSummary; users: ActivationUserRow[] });
+      }
       if (errs.length) setError(errs.join(" "));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load admin data. Is the server running?");
@@ -245,6 +270,7 @@ const Admin = () => {
     { key: "messages", label: "Messages", icon: MessageSquare },
     { key: "reports", label: `Reports${pendingCount > 0 ? ` (${pendingCount})` : ""}`, icon: Flag },
     { key: "appeals", label: `Appeals${pendingAppealCount > 0 ? ` (${pendingAppealCount})` : ""}`, icon: Inbox },
+    { key: "activation", label: "Activation", icon: TrendingUp },
   ] as const;
 
   return (
@@ -563,6 +589,140 @@ const Admin = () => {
                 </Card>
               ))
             )}
+          </div>
+        )}
+
+        {/* Activation Tab */}
+        {activeTab === "activation" && (
+          <div className="space-y-6">
+            {/* OKR Header */}
+            <div className="p-4 rounded-xl bg-primary/5 border border-primary/20">
+              <p className="text-xs font-semibold text-primary uppercase tracking-wide mb-0.5">OKR — Activation Objective</p>
+              <p className="text-sm text-foreground font-medium">Help users quickly meet new friends</p>
+              <p className="text-xs text-muted-foreground mt-1">Target: account setup + first chat in 5–10 min · 50% of users stay in a group chat</p>
+            </div>
+
+            {/* Summary cards */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {[
+                {
+                  label: "Started Test",
+                  value: loading ? "—" : activation?.summary.usersStartedTest ?? 0,
+                  icon: FlaskConical,
+                  color: "text-pink-500",
+                },
+                {
+                  label: "Reached a Chat",
+                  value: loading ? "—" : activation?.summary.usersJoinedChat ?? 0,
+                  icon: MessageSquare,
+                  color: "text-green-500",
+                },
+                {
+                  label: "Chat Join Rate",
+                  value: loading ? "—" : `${activation?.summary.chatJoinRate ?? 0}%`,
+                  icon: TrendingUp,
+                  color: activation?.summary.chatJoinRate != null && activation.summary.chatJoinRate >= 50 ? "text-green-500" : "text-orange-500",
+                  target: "Target: 50%",
+                },
+                {
+                  label: "Avg Time to Chat",
+                  value: loading ? "—" : activation?.summary.avgElapsedMs != null
+                    ? activation.summary.avgElapsedMs < 60000
+                      ? `${Math.round(activation.summary.avgElapsedMs / 1000)}s`
+                      : `${Math.round(activation.summary.avgElapsedMs / 60000)}m`
+                    : "—",
+                  icon: Clock,
+                  color: activation?.summary.avgElapsedMs != null && activation.summary.avgElapsedMs <= 10 * 60 * 1000 ? "text-green-500" : "text-orange-500",
+                  target: "Target: ≤10 min",
+                },
+                {
+                  label: "Met 10-min Target",
+                  value: loading ? "—" : `${activation?.summary.metTargetRate ?? 0}%`,
+                  icon: CheckCircle2,
+                  color: activation?.summary.metTargetRate != null && activation.summary.metTargetRate >= 80 ? "text-green-500" : "text-orange-500",
+                },
+              ].map(({ label, value, icon: Icon, color, target }) => (
+                <Card key={label}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex items-center gap-2">
+                    <Icon className={`h-5 w-5 flex-shrink-0 ${color}`} />
+                    <span className="text-2xl font-bold text-foreground">{value}</span>
+                    {target && <span className="text-[10px] text-muted-foreground ml-auto self-end pb-0.5">{target}</span>}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {/* Per-user table */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Per-User Activation</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!activation || activation.users.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center">No users have started the personality test yet.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-left">
+                          <th className="pb-3 pr-4 font-medium text-muted-foreground">User</th>
+                          <th className="pb-3 pr-4 font-medium text-muted-foreground">Test Started</th>
+                          <th className="pb-3 pr-4 font-medium text-muted-foreground">First Chat</th>
+                          <th className="pb-3 pr-4 font-medium text-muted-foreground">Time to Chat</th>
+                          <th className="pb-3 font-medium text-muted-foreground">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {activation.users.map((u) => {
+                          const elapsed = u.elapsed_ms != null
+                            ? u.elapsed_ms < 60000
+                              ? `${Math.round(u.elapsed_ms / 1000)}s`
+                              : `${Math.round(u.elapsed_ms / 60000)}m ${Math.round((u.elapsed_ms % 60000) / 1000)}s`
+                            : null;
+                          return (
+                            <tr key={u.id} className="border-b border-border/50 last:border-0">
+                              <td className="py-3 pr-4 font-medium text-foreground">
+                                {u.display_name || u.username}
+                                <span className="ml-1.5 text-xs text-muted-foreground font-normal">@{u.username}</span>
+                              </td>
+                              <td className="py-3 pr-4 text-muted-foreground text-xs whitespace-nowrap">
+                                {new Date(u.test_started_at).toLocaleString()}
+                              </td>
+                              <td className="py-3 pr-4 text-muted-foreground text-xs whitespace-nowrap">
+                                {u.first_chat_joined_at ? new Date(u.first_chat_joined_at).toLocaleString() : "—"}
+                              </td>
+                              <td className="py-3 pr-4 text-foreground font-medium">
+                                {elapsed ?? <span className="text-muted-foreground">—</span>}
+                              </td>
+                              <td className="py-3">
+                                {u.met_target === true && (
+                                  <span className="flex items-center gap-1 text-green-600 text-xs font-medium">
+                                    <CheckCircle2 className="h-3.5 w-3.5" /> On target
+                                  </span>
+                                )}
+                                {u.met_target === false && (
+                                  <span className="flex items-center gap-1 text-orange-500 text-xs font-medium">
+                                    <XCircle className="h-3.5 w-3.5" /> Over 10 min
+                                  </span>
+                                )}
+                                {u.met_target === null && (
+                                  <span className="flex items-center gap-1 text-muted-foreground text-xs">
+                                    <Clock className="h-3.5 w-3.5" /> No chat yet
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         )}
 

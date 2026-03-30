@@ -143,7 +143,13 @@ const PersonalityTest = () => {
     if (!isAuthenticated || !user?.id) {
       toast.message("Please sign up or log in to take the quiz.");
       navigate("/get-started");
+      return;
     }
+    fetch(apiUrl("/api/activation/test-started"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: user.id }),
+    }).catch(() => {});
   }, [isAuthenticated, user, navigate]);
 
   const questionProgress = useMemo(

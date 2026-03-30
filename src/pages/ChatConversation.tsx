@@ -110,6 +110,15 @@ const ChatConversation = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    if (!user?.id) return;
+    fetch(apiUrl("/api/activation/chat-joined"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: user.id }),
+    }).catch(() => {});
+  }, [user?.id]);
+
   // Fetch members when sheet opens
   useEffect(() => {
     if (!membersOpen || !groupId || !user) return;
@@ -570,7 +579,7 @@ const ChatConversation = () => {
                       setSelectedId(isSelected ? null : msg.id);
                     }
                   }}
-                  className={`max-w-[82%] sm:max-w-[75%] px-3 sm:px-4 py-2 sm:py-2.5 text-sm shadow-sm ${
+                  className={`max-w-[82%] sm:max-w-[75%] px-3 sm:px-4 py-2 sm:py-2.5 text-sm shadow-sm break-words min-w-0 ${
                     msg.isMe
                       ? `bg-primary text-primary-foreground rounded-2xl rounded-br-sm ${!editingId ? "cursor-pointer active:opacity-80" : ""}`
                       : "bg-card text-card-foreground rounded-2xl rounded-bl-sm"

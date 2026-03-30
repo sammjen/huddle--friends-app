@@ -55,6 +55,8 @@ const migrations = [
   "ALTER TABLE user ADD COLUMN profile_photo TEXT",
   "ALTER TABLE user ADD COLUMN hobbies TEXT DEFAULT '[]'",
   "ALTER TABLE user ADD COLUMN role TEXT NOT NULL DEFAULT 'user'",
+  "ALTER TABLE user ADD COLUMN test_started_at TEXT",
+  "ALTER TABLE user ADD COLUMN first_chat_joined_at TEXT",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (_) { /* column already exists */ }
@@ -1462,6 +1464,99 @@ app.post("/api/match", (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to run matching." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Activation tracking
+// ---------------------------------------------------------------------------
+
+// POST /api/activation/test-started — record when a user begins the personality test (once only)
+app.post("/api/activation/test-started", requireAuth, (req, res) => {
+  try {
+    const userId = req.currentUser.id;
+    const user = db.prepare("SELECT test_started_at FROM user WHERE id = ?").get(userId);
+    if (!user) return res.status(404).json({ error: "User not found." });
+    if (!user.test_started_at) {
+      db.prepare("UPDATE user SET test_started_at = ? WHERE id = ?")
+        .run(new Date().toISOString(), userId);
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to record test start." });
+  }
+});
+
+// POST /api/activation/chat-joined — record when a user first opens a chat (once only)
+app.post("/api/activation/chat-joined", requireAuth, (req, res) => {
+  try {
+    const userId = req.currentUser.id;
+    const user = db.prepare("SELECT first_chat_joined_at FROM user WHERE id = ?").get(userId);
+    if (!user) return res.status(404).json({ error: "User not found." });
+    if (!user.first_chat_joined_at) {
+      db.prepare("UPDATE user SET first_chat_joined_at = ? WHERE id = ?")
+        .run(new Date().toISOString(), userId);
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to record chat join." });
+  }
+});
+
+// GET /api/admin/activation — activation metrics for OKR dashboard
+app.get("/api/admin/activation", requireAdmin, (req, res) => {
+  try {
+    const rows = db.prepare(`
+      SELECT id, username, display_name, test_started_at, first_chat_joined_at
+      FROM user
+      WHERE test_started_at IS NOT NULL
+      ORDER BY test_started_at DESC
+    `).all();
+
+    const TARGET_MS = 10 * 60 * 1000; // 10 minutes in ms
+
+    const withTimes = rows.map((u) => {
+      const startedAt = u.test_started_at;
+      const joinedAt = u.first_chat_joined_at;
+      const elapsedMs = startedAt && joinedAt
+        ? new Date(joinedAt).getTime() - new Date(startedAt).getTime()
+        : null;
+      return {
+        id: u.id,
+        username: u.username,
+        display_name: u.display_name,
+        test_started_at: startedAt,
+        first_chat_joined_at: joinedAt,
+        elapsed_ms: elapsedMs,
+        met_target: elapsedMs !== null ? elapsedMs <= TARGET_MS : null,
+      };
+    });
+
+    const completed = withTimes.filter((u) => u.elapsed_ms !== null);
+    const avgMs = completed.length
+      ? Math.round(completed.reduce((s, u) => s + u.elapsed_ms, 0) / completed.length)
+      : null;
+    const metTarget = completed.filter((u) => u.met_target).length;
+    const chatJoinRate = rows.length
+      ? Math.round((completed.length / rows.length) * 100)
+      : 0;
+
+    res.json({
+      summary: {
+        usersStartedTest: rows.length,
+        usersJoinedChat: completed.length,
+        chatJoinRate,
+        avgElapsedMs: avgMs,
+        metTargetCount: metTarget,
+        metTargetRate: completed.length ? Math.round((metTarget / completed.length) * 100) : 0,
+      },
+      users: withTimes,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch activation data." });
   }
 });
 
