@@ -547,7 +547,7 @@ const ChatConversation = () => {
                             size="sm"
                             className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
                             onClick={() => setReportTarget(member)}
-                            title="Report user"
+                            aria-label="Report user"
                           >
                             <Flag className="w-3.5 h-3.5" />
                           </Button>
@@ -615,7 +615,7 @@ const ChatConversation = () => {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Reason</label>
+              <label id="report-reason-label" className="text-sm font-medium text-foreground">Reason</label>
               <div className="grid gap-2">
                 {REPORT_REASONS.map((reason) => (
                   <button
@@ -633,8 +633,9 @@ const ChatConversation = () => {
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Additional details (optional)</label>
+              <label htmlFor="report-description" className="text-sm font-medium text-foreground">Additional details (optional)</label>
               <Textarea
+                id="report-description"
                 value={reportDescription}
                 onChange={(e) => setReportDescription(e.target.value)}
                 placeholder="Describe what happened..."

@@ -449,9 +449,7 @@ const Profile = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <AppHeader />
-      <div id="main-content" />
-
-      <div className="flex-1 w-full max-w-2xl mx-auto px-4 py-6 space-y-4">
+      <main id="main-content" className="flex-1 w-full max-w-2xl mx-auto px-4 py-6 space-y-4">
 
         {/* Page heading */}
         <div className="px-1">
@@ -895,7 +893,7 @@ const Profile = () => {
 
         {/* Bottom padding for mobile */}
         <div className="h-6" />
-      </div>
+      </main>
     </div>
   );
 };

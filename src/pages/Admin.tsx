@@ -798,10 +798,11 @@ const Admin = () => {
 
                 <div className="flex items-end gap-3">
                   <div className="flex-1">
-                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1.5">
+                    <label htmlFor="sched-hour" className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1.5">
                       Hour (0–23)
                     </label>
                     <Input
+                      id="sched-hour"
                       type="number"
                       min={0}
                       max={23}
@@ -811,10 +812,11 @@ const Admin = () => {
                     />
                   </div>
                   <div className="flex-1">
-                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1.5">
+                    <label htmlFor="sched-minute" className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1.5">
                       Minute (0–59)
                     </label>
                     <Input
+                      id="sched-minute"
                       type="number"
                       min={0}
                       max={59}

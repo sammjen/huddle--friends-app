@@ -322,9 +322,9 @@ const Index = () => {
             </div>
           </div>
           <div className="flex flex-wrap gap-4 sm:gap-6 text-xs sm:text-sm text-muted-foreground">
-            <span className="hover:text-foreground cursor-pointer transition-colors">About</span>
-            <span className="hover:text-foreground cursor-pointer transition-colors">Privacy</span>
-            <span className="hover:text-foreground cursor-pointer transition-colors">Contact</span>
+            <button className="hover:text-foreground cursor-pointer transition-colors">About</button>
+            <button className="hover:text-foreground cursor-pointer transition-colors">Privacy</button>
+            <button className="hover:text-foreground cursor-pointer transition-colors">Contact</button>
           </div>
           <p className="text-[10px] sm:text-xs text-muted-foreground/60">&copy; 2026 Huddle. All rights reserved.</p>
         </div>

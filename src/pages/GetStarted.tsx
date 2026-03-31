@@ -165,7 +165,7 @@ const GetStarted = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <AppHeader />
-      <div id="main-content" />
+      <main id="main-content">
 
       {/* Progress */}
       <div className="px-4 sm:px-6 pt-4">
@@ -301,6 +301,7 @@ const GetStarted = () => {
           </div>
         </div>
       </div>
+      </main>
     </div>
   );
 };
