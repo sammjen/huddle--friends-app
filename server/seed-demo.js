@@ -133,6 +133,36 @@ const txn = db.transaction(() => {
 
 txn();
 
+// Populate activation tracking so OKR dashboard shows data
+// Simulate users who took the test and joined chats over the past 30 days
+const setActivation = db.prepare(`
+  UPDATE user SET test_started_at = ?, first_chat_joined_at = ?
+  WHERE username = ? AND test_started_at IS NULL
+`);
+
+const activationTxn = db.transaction(() => {
+  let nameIdx = 0;
+  for (const fullName of NAMES) {
+    const username = fullName.toLowerCase().replace(/[^a-z]/g, "").slice(0, 15);
+    // Spread activation timestamps over the past 30 days
+    const daysAgo = Math.floor(Math.random() * 30);
+    const minutesOffset = Math.floor(Math.random() * 1440); // random time of day
+    const testStart = new Date(Date.now() - daysAgo * 86400000 - minutesOffset * 60000);
+    // 85% of users also joined a chat (within 1–15 minutes of taking the test)
+    const joinedChat = Math.random() < 0.85;
+    const chatJoin = joinedChat
+      ? new Date(testStart.getTime() + (1 + Math.floor(Math.random() * 14)) * 60000)
+      : null;
+    setActivation.run(
+      testStart.toISOString(),
+      chatJoin ? chatJoin.toISOString() : null,
+      username
+    );
+    nameIdx++;
+  }
+});
+activationTxn();
+
 // Add all demo users to every active groupchat (including "The Boys")
 const activeChats = db.prepare("SELECT id FROM groupchat WHERE active = 1").all();
 const allDemoUsers = db.prepare("SELECT id FROM user WHERE role = 'user'").all();
