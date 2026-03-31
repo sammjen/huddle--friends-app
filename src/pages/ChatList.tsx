@@ -112,20 +112,20 @@ const ChatList = () => {
     fetchGroups().finally(() => setLoading(false));
   }, [isAuthenticated, user, fetchGroups]);
 
-  // Auto-match on first load if user has no groups
+  // Auto-match on first load if user has no groups (admin only)
   useEffect(() => {
-    if (hasAutoMatched.current || loading || groups.length > 0 || !isAuthenticated || !user) return;
+    if (hasAutoMatched.current || loading || groups.length > 0 || !isAuthenticated || !user || user.role !== "admin") return;
     hasAutoMatched.current = true;
     matchRef.current();
   }, [loading, groups.length, isAuthenticated, user]);
 
-  // Tick-down timer — auto-shuffle at midnight if not already shuffled today
+  // Tick-down timer — auto-shuffle at midnight if not already shuffled today (admin only)
   useEffect(() => {
     if (!isAuthenticated) return;
     const interval = setInterval(() => {
       const remaining = secondsUntilMidnight();
       setCountdown(remaining);
-      if (remaining <= 0 && !shuffledToday()) {
+      if (remaining <= 0 && !shuffledToday() && user?.role === "admin") {
         matchRef.current();
       }
     }, 1000);
