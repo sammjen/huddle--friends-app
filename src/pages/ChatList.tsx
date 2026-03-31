@@ -181,7 +181,7 @@ const ChatList = () => {
                 <p className="text-xs sm:text-sm text-muted-foreground mt-3 sm:mt-4">
                   New friends drop every 24 hours
                 </p>
-                {!alreadyShuffled && (
+                {!alreadyShuffled && user?.role === "admin" && (
                   <Button
                     onClick={() => matchRef.current()}
                     disabled={shuffling}
