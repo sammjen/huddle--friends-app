@@ -885,7 +885,11 @@ const Admin = () => {
                     setSchedError(null);
                     setSchedSuccess(null);
                     try {
-                      const res = await fetch(apiUrl("/api/match"), { method: "POST" });
+                      const res = await fetch(apiUrl("/api/match"), {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ userId: user.id }),
+                      });
                       const data = await res.json();
                       if (!res.ok) throw new Error(data.error || "Match failed.");
                       setSchedSuccess(`Match complete — ${data.groups?.length ?? 0} new groups created for ${data.totalUsers} users.`);
